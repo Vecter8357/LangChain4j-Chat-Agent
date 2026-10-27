@@ -53,6 +53,18 @@ class DagWorkflowCompilerTest {
                 .hasMessageContaining("只能引用上游节点输出");
     }
 
+    @Test
+    void acceptsAgentNodeWithSystemPrompt() {
+        DagWorkflowDefinition definition = validDefinition();
+        Node agent = definition.getNodes().get(1);
+        agent.setType(NodeType.AGENT);
+        agent.setConfig(objectMapper.createObjectNode().put("systemPrompt", "You are a research agent."));
+
+        CompiledDagWorkflow compiled = compiler.compile(definition);
+
+        assertThat(compiled.nodesById().get("analyze").getType()).isEqualTo(NodeType.AGENT);
+    }
+
     private DagWorkflowDefinition validDefinition() {
         DagWorkflowDefinition definition = new DagWorkflowDefinition();
         definition.setCode("compiler-test");

@@ -1,16 +1,12 @@
 package com.melon.service.impl;
 
+import com.melon.agent.capability.BuiltInCapabilityRegistrar;
+import com.melon.agent.runtime.AgentRun;
+import com.melon.agent.runtime.PlatformAgentService;
 import com.melon.service.RagService;
 import com.melon.service.StreamingChatService;
 import com.melon.tool.FetchTool;
-import com.melon.tool.FilesystemTool;
 import com.melon.tool.GitHubTool;
-import dev.langchain4j.model.chat.ChatModel;
-import dev.langchain4j.model.chat.StreamingChatModel;
-import dev.langchain4j.model.chat.response.ChatResponse;
-import dev.langchain4j.model.chat.response.StreamingChatResponseHandler;
-import dev.langchain4j.service.AiServices;
-import dev.langchain4j.service.UserMessage;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -18,176 +14,103 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
-
-import static com.melon.prompt.Langchain4jPrompt.MCP_RESULT;
-import static com.melon.prompt.Langchain4jPrompt.RAG_QUERY;
+import java.util.function.Supplier;
 
 /**
- * @author: melon
- * @description: TODO
- * @date: 2025/3/18 13:45
+ * 对话 SSE 服务实现。所有业务入口均委托统一 Agent 平台执行，完成后发送最终文本。
  */
 @AllArgsConstructor
 @Slf4j
 @Service
 public class StreamingChatServiceImpl implements StreamingChatService {
+
+    private static final String FILESYSTEM_PROMPT = """
+            你是文件系统助手。只能使用提供的只读文件系统能力，并严格遵守允许目录限制。
+            对文件内容进行总结时要明确文件来源。
+            """;
+    private static final String KNOWLEDGE_PROMPT = """
+            你是文档知识库助手。必须使用 Knowledge 能力查询当前请求指定的文件，
+            根据文档内容回答，不得补充文档中没有的事实。
+            """;
+
     private final GitHubTool gitHubTool;
     private final FetchTool fetchTool;
-    private final FilesystemTool filesystemTool;
-    private final ChatModel chatLanguageModel;
-    private final StreamingChatModel streamingChatLanguageModel;
+    private final PlatformAgentService platformAgentService;
     private final RagService ragService;
 
+    /** {@inheritDoc} */
+    @Override
+    public SseEmitter processAgentRequest(String input, List<String> fileIds) {
+        return emit(() -> platformAgentService.answer(platformAgentService.runGeneral(input, fileIds)));
+    }
+
+    /** {@inheritDoc} */
     @Override
     public SseEmitter processGitHubRequest(String input) {
-        String result = gitHubTool.askGitHub(input);
-        // -1 表示不超时
-        SseEmitter emitter = new SseEmitter(-1L);
-        CompletableFuture<ChatResponse> futureResponse = new CompletableFuture<>();
-        streamingChatLanguageModel.chat(String.format(MCP_RESULT, input, result), new StreamingChatResponseHandler() {
-            @Override
-            public void onPartialResponse(String partialResponse) {
-                try {
-                    emitter.send(partialResponse);
-                } catch (Exception e) {
-                    emitter.completeWithError(e);
-                }
-            }
-
-            @Override
-            public void onCompleteResponse(ChatResponse completeResponse) {
-                futureResponse.complete(completeResponse);
-                emitter.complete();
-            }
-
-            @Override
-            public void onError(Throwable error) {
-                futureResponse.completeExceptionally(error);
-                emitter.completeWithError(error);
-            }
-        });
-        return emitter;
+        return emit(() -> gitHubTool.askGitHub(input));
     }
 
+    /** {@inheritDoc} */
     @Override
     public SseEmitter processFetchRequest(String input) {
-        String result = fetchTool.fetchAndAnswer(input);
-        // -1 表示不超时
-        SseEmitter emitter = new SseEmitter(-1L);
-        CompletableFuture<ChatResponse> futureResponse = new CompletableFuture<>();
-        streamingChatLanguageModel.chat(String.format(MCP_RESULT, input, result), new StreamingChatResponseHandler() {
-            @Override
-            public void onPartialResponse(String partialResponse) {
-                try {
-                    emitter.send(partialResponse);
-                } catch (Exception e) {
-                    emitter.completeWithError(e);
-                }
-            }
-
-            @Override
-            public void onCompleteResponse(ChatResponse completeResponse) {
-                futureResponse.complete(completeResponse);
-                emitter.complete();
-            }
-
-            @Override
-            public void onError(Throwable error) {
-                futureResponse.completeExceptionally(error);
-                emitter.completeWithError(error);
-            }
-        });
-        return emitter;
+        return emit(() -> fetchTool.fetchAndAnswer(input));
     }
 
+    /** {@inheritDoc} */
     @Override
     public SseEmitter processFilesystemRequestStream(String input) {
-        SseEmitter emitter = new SseEmitter(-1L);
-
-        CompletableFuture.runAsync(() -> {
-            try {
-                FilesystemAssistant assistant = AiServices.builder(FilesystemAssistant.class)
-                        .chatModel(chatLanguageModel)
-                        .tools(filesystemTool)
-                        .build();
-                emitter.send(assistant.chat(input));
-                emitter.complete();
-            } catch (Exception e) {
-                log.error("处理文件系统请求失败", e);
-                emitter.completeWithError(e);
-            }
+        return emit(() -> {
+            AgentRun run = platformAgentService.runWithCapabilities(
+                    "filesystem-agent",
+                    FILESYSTEM_PROMPT,
+                    input,
+                    List.of(
+                            "local.filesystem.list_directory",
+                            "local.filesystem.read_file",
+                            "local.filesystem.search_files",
+                            "local.filesystem.info"),
+                    List.of());
+            return platformAgentService.answer(run);
         });
-
-        return emitter;
     }
 
+    /** {@inheritDoc} */
     @Override
     public SseEmitter processOtherRequest(String input) {
-        // -1 表示不超时
-        SseEmitter emitter = new SseEmitter(-1L);
-        CompletableFuture<ChatResponse> futureResponse = new CompletableFuture<>();
-        streamingChatLanguageModel.chat(input, new StreamingChatResponseHandler() {
-            @Override
-            public void onPartialResponse(String partialResponse) {
-                try {
-                    emitter.send(partialResponse);
-                } catch (Exception e) {
-                    emitter.completeWithError(e);
-                }
-            }
-
-            @Override
-            public void onCompleteResponse(ChatResponse completeResponse) {
-                futureResponse.complete(completeResponse);
-                emitter.complete();
-            }
-
-            @Override
-            public void onError(Throwable error) {
-                futureResponse.completeExceptionally(error);
-                emitter.completeWithError(error);
-            }
-        });
-        return emitter;
+        return processAgentRequest(input, List.of());
     }
 
+    /** {@inheritDoc} */
     @Override
     public SseEmitter processRagRequest(String input, List<String> fileIds) {
-        String result = ragService.answerWithRag(input, fileIds);
-        // -1 表示不超时
-        SseEmitter emitter = new SseEmitter(-1L);
-        CompletableFuture<ChatResponse> futureResponse = new CompletableFuture<>();
-        streamingChatLanguageModel.chat(String.format(RAG_QUERY, result, input), new StreamingChatResponseHandler() {
-            @Override
-            public void onPartialResponse(String partialResponse) {
-                try {
-                    emitter.send(partialResponse);
-                } catch (Exception e) {
-                    emitter.completeWithError(e);
-                }
-            }
-
-            @Override
-            public void onCompleteResponse(ChatResponse completeResponse) {
-                futureResponse.complete(completeResponse);
-                emitter.complete();
-            }
-
-            @Override
-            public void onError(Throwable error) {
-                futureResponse.completeExceptionally(error);
-                emitter.completeWithError(error);
-            }
+        return emit(() -> {
+            AgentRun run = platformAgentService.runWithCapabilities(
+                    "knowledge-agent", KNOWLEDGE_PROMPT, input,
+                    List.of(BuiltInCapabilityRegistrar.RAG_ANSWER), fileIds);
+            return platformAgentService.answer(run);
         });
-        return emitter;
     }
 
+    /** {@inheritDoc} */
     @Override
     public void removeFileFromRag(String fileId) {
         ragService.removeFileFromRag(fileId);
     }
 
-    interface FilesystemAssistant {
-        String chat(@UserMessage String message);
+    /**
+     * 异步执行阻塞型 Agent 任务，并将最终结果写入 SSE。
+     */
+    private SseEmitter emit(Supplier<String> task) {
+        SseEmitter emitter = new SseEmitter(-1L);
+        CompletableFuture.runAsync(() -> {
+            try {
+                emitter.send(task.get());
+                emitter.complete();
+            } catch (Exception error) {
+                log.error("统一 Agent 请求执行失败", error);
+                emitter.completeWithError(error);
+            }
+        });
+        return emitter;
     }
 }

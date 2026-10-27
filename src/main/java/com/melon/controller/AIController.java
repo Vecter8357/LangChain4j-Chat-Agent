@@ -3,7 +3,6 @@ package com.melon.controller;
 import com.melon.entity.UploadFile;
 import com.melon.service.FileStorageService;
 import com.melon.service.StreamingChatService;
-import dev.langchain4j.model.chat.ChatModel;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.MediaType;
@@ -16,7 +15,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-import static com.melon.prompt.Langchain4jPrompt.*;
 
 /**
  * AI工具统一控制器
@@ -28,7 +26,6 @@ import static com.melon.prompt.Langchain4jPrompt.*;
 @RequestMapping("/api/ai")
 @Slf4j
 public class AIController {
-    private final ChatModel chatLanguageModel;
     private final FileStorageService fileStorageService;
     private final StreamingChatService streamingChatService;
     
@@ -45,24 +42,7 @@ public class AIController {
         
         log.info("收到AI工具流式请求: input={}, fileIds={}", input, fileIds);
 
-        // 如果有上传的文件，优先使用RAG
-        if (fileIds != null && !fileIds.isEmpty()) {
-            return streamingChatService.processRagRequest(input, fileIds);
-        }
-
-        // 使用AI模型回答问题
-        String answer = classifyToolType(input);
-        switch (answer.toLowerCase()) {
-            case "github":
-                return streamingChatService.processGitHubRequest(input);
-            case "fetch":
-                return streamingChatService.processFetchRequest(input);
-            case "filesystem":
-                return streamingChatService.processFilesystemRequestStream(input);
-            default:
-                // 默认使用Ollama模型直接回答
-                return streamingChatService.processOtherRequest(input);
-        }
+        return streamingChatService.processAgentRequest(input, fileIds);
     }
     
     /**
@@ -121,30 +101,4 @@ public class AIController {
         }
     }
     
-    /**
-     * 分类工具类型
-     *
-     * @param input 用户输入
-     * @return 工具类型
-     */
-    private String classifyToolType(String input) {
-        // 使用大模型进行更复杂的分类
-        try {
-            String prompt = String.format(QUESTION_CATEGORY,input);
-
-            String classification = chatLanguageModel.chat(prompt).trim().toLowerCase();
-
-            if (classification.contains("github")) {
-                return "github";
-            } else if (classification.contains("fetch")) {
-                return "fetch";
-            } else if (classification.contains("filesystem")) {
-                return "filesystem";
-            }
-            return "other";
-        } catch (Exception e) {
-            log.error("使用大模型分类工具类型时出错", e);
-            return "other";
-        }
-    }
 }

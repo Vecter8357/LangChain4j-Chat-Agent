@@ -1,45 +1,47 @@
 package com.melon.workflow;
 
 import com.melon.config.properties.RewriteWorkflowProperties;
+import com.melon.agent.runtime.AgentRun;
+import com.melon.agent.runtime.PlatformAgentService;
 import com.melon.tool.FetchTool;
 import com.melon.workflow.model.RewriteWorkflowState.ResearchEvidence;
 import com.melon.workflow.model.RewriteWorkflowState.ResearchPlanItem;
-import dev.langchain4j.mcp.McpToolProvider;
-import dev.langchain4j.mcp.client.DefaultMcpClient;
-import dev.langchain4j.mcp.client.McpClient;
-import dev.langchain4j.mcp.client.transport.McpTransport;
-import dev.langchain4j.mcp.client.transport.stdio.StdioMcpTransport;
-import dev.langchain4j.model.chat.ChatModel;
-import dev.langchain4j.service.AiServices;
-import dev.langchain4j.service.UserMessage;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
 import java.time.Instant;
 import java.util.List;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.TimeUnit;
 
 /**
- * 工作流与 MCP 网络工具之间的边界。模型负责规划问题，工作流负责校验并调用工具。
+ * 改编工作流的研究边界。
+ * 搜索任务通过统一 Agent/MCP 平台执行，明确 URL 则通过 Fetch 兼容入口执行。
  */
 @Slf4j
 @Component
 public class McpResearchGateway {
 
     private final FetchTool fetchTool;
-    private final ChatModel chatLanguageModel;
+    private final PlatformAgentService platformAgentService;
     private final RewriteWorkflowProperties properties;
 
+    /**
+     * 创建改编研究网关。
+     */
     public McpResearchGateway(FetchTool fetchTool,
-                              ChatModel chatLanguageModel,
+                              PlatformAgentService platformAgentService,
                               RewriteWorkflowProperties properties) {
         this.fetchTool = fetchTool;
-        this.chatLanguageModel = chatLanguageModel;
+        this.platformAgentService = platformAgentService;
         this.properties = properties;
     }
 
+    /**
+     * 根据研究计划优先执行 MCP 搜索，必要时回退到指定 URL 抓取。
+     *
+     * @param item 研究问题、目的和可选 URL
+     * @return 带时间和成功状态的研究证据
+     */
     public ResearchEvidence research(ResearchPlanItem item) {
         ResearchEvidence evidence = new ResearchEvidence();
         evidence.setPurpose(item.getPurpose());
@@ -77,50 +79,35 @@ public class McpResearchGateway {
         return evidence;
     }
 
+    /**
+     * 使用 rewrite-search 提供方的能力运行资料研究 Agent。
+     */
     private String searchViaConfiguredMcp(ResearchPlanItem item) {
         if (properties.getResearch().getSearchCommand() == null
                 || properties.getResearch().getSearchCommand().isEmpty()) {
             return "MCP 搜索失败：search-enabled=true，但 search-command 未配置";
         }
 
-        McpClient client = null;
         try {
-            McpTransport transport = new StdioMcpTransport.Builder()
-                    .command(properties.getResearch().getSearchCommand())
-                    .environment(properties.getResearch().getEnvironment())
-                    .logEvents(properties.getResearch().isDebug())
-                    .build();
-            client = new DefaultMcpClient.Builder()
-                    .transport(transport)
-                    .toolExecutionTimeout(properties.getResearch().getTimeout())
-                    .build();
-            McpToolProvider toolProvider = McpToolProvider.builder()
-                    .mcpClients(List.of(client))
-                    .failIfOneServerFails(true)
-                    .build();
-            SearchAssistant assistant = AiServices.builder(SearchAssistant.class)
-                    .chatModel(chatLanguageModel)
-                    .toolProvider(toolProvider)
-                    .build();
             String prompt = "使用 MCP 搜索工具研究下面的问题。至少交叉核对两个结果；"
                     + "回答时给出来源标题和 URL，不得把未经来源支持的内容写成事实。\n"
                     + "研究目的: " + item.getPurpose() + "\n研究问题: " + item.getQuestion();
-            return CompletableFuture.supplyAsync(() -> assistant.research(prompt))
-                    .get(properties.getResearch().getTimeout().toMillis(), TimeUnit.MILLISECONDS);
+            AgentRun run = platformAgentService.runWithProviders(
+                    "rewrite-research-agent",
+                    "你是文章改编工作流的资料研究 Agent。必须通过搜索能力取得证据并提供来源。",
+                    prompt,
+                    List.of("rewrite-search"),
+                    List.of());
+            return platformAgentService.answer(run);
         } catch (Exception e) {
             log.error("调用工作流 MCP 搜索服务失败", e);
             return "MCP 搜索失败：" + rootMessage(e);
-        } finally {
-            if (client != null) {
-                try {
-                    client.close();
-                } catch (Exception e) {
-                    log.debug("关闭工作流 MCP 搜索客户端失败", e);
-                }
-            }
         }
     }
 
+    /**
+     * 判断字符串是否为允许的 HTTP/HTTPS URL。
+     */
     private boolean isHttpUrl(String value) {
         if (!StringUtils.hasText(value)) {
             return false;
@@ -129,6 +116,9 @@ public class McpResearchGateway {
         return normalized.startsWith("http://") || normalized.startsWith("https://");
     }
 
+    /**
+     * 识别兼容入口返回的常见工具错误文本。
+     */
     private boolean looksLikeToolError(String content) {
         if (!StringUtils.hasText(content)) {
             return true;
@@ -141,15 +131,14 @@ public class McpResearchGateway {
                 || normalized.startsWith("抱歉");
     }
 
+    /**
+     * 提取异常链最底层信息。
+     */
     private String rootMessage(Throwable error) {
         Throwable current = error;
         while (current.getCause() != null) {
             current = current.getCause();
         }
         return current.getMessage() == null ? current.getClass().getSimpleName() : current.getMessage();
-    }
-
-    interface SearchAssistant {
-        String research(@UserMessage String message);
     }
 }

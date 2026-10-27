@@ -156,3 +156,27 @@ dag-workflow:
     core-pool-size: ${DAG_NODE_EXECUTOR_CORE_SIZE:4}
     max-pool-size: ${DAG_NODE_EXECUTOR_MAX_SIZE:8}
     queue-capacity: ${DAG_NODE_EXECUTOR_QUEUE_CAPACITY:50}
+
+agent-platform:
+  runtime:
+    enabled: ${AGENT_RUNTIME_ENABLED:true}
+    default-max-steps: ${AGENT_DEFAULT_MAX_STEPS:8}
+    maximum-max-steps: ${AGENT_MAXIMUM_MAX_STEPS:30}
+    maximum-capabilities: ${AGENT_MAXIMUM_CAPABILITIES:64}
+  mcp:
+    # MCP 服务由平台统一维护。tool-security 下的 GitHub/Fetch 及改编搜索配置会自动映射到这里。
+    # 显式配置同名 server 时，以这里的配置为准。服务注册后调用 refresh 接口发现并注册其 Tools。
+    servers: {}
+    # 示例：
+    # servers:
+    #   web-search:
+    #     enabled: true
+    #     transport: STDIO
+    #     command: ["uvx", "mcp-server-fetch"]
+    #     timeout: 120s
+    #   remote-tools:
+    #     enabled: true
+    #     transport: STREAMABLE_HTTP
+    #     url: https://example.com/mcp
+    #     headers:
+    #       Authorization: ${REMOTE_MCP_AUTHORIZATION:}

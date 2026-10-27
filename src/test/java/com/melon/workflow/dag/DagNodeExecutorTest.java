@@ -3,6 +3,8 @@ package com.melon.workflow.dag;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.melon.workflow.McpResearchGateway;
+import com.melon.mcp.McpInvocationService;
+import com.melon.mcp.McpInvocationResult;
 import com.melon.workflow.WorkflowModelGateway;
 import com.melon.workflow.dag.executor.DagNodeExecutionContext;
 import com.melon.workflow.dag.executor.LlmDagNodeExecutor;
@@ -50,7 +52,8 @@ class DagNodeExecutorTest {
         evidence.setSuccessful(true);
         evidence.setContent("检索结果");
         when(gateway.research(any())).thenReturn(evidence);
-        McpToolDagNodeExecutor executor = new McpToolDagNodeExecutor(gateway, objectMapper);
+        McpToolDagNodeExecutor executor = new McpToolDagNodeExecutor(
+                gateway, mock(McpInvocationService.class), objectMapper);
         Node node = node("search", NodeType.MCP_TOOL);
         node.setConfig(objectMapper.createObjectNode().put("operation", "research"));
         ObjectNode input = objectMapper.createObjectNode();
@@ -62,6 +65,25 @@ class DagNodeExecutorTest {
         assertThat(result.output().path("successful").asBoolean()).isTrue();
         assertThat(result.output().path("content").asText()).isEqualTo("检索结果");
         verify(gateway).research(any());
+    }
+
+    @Test
+    void mcpNodeInvokesRegisteredCapabilityWhenCapabilityIdIsConfigured() {
+        McpResearchGateway gateway = mock(McpResearchGateway.class);
+        McpInvocationService invocationService = mock(McpInvocationService.class);
+        when(invocationService.invoke(any())).thenReturn(McpInvocationResult.success(
+                "mcp.search.query", "search", "query",
+                objectMapper.createObjectNode().put("answer", "统一调用结果"), 10));
+        McpToolDagNodeExecutor executor = new McpToolDagNodeExecutor(
+                gateway, invocationService, objectMapper);
+        Node node = node("search", NodeType.MCP_TOOL);
+        node.setConfig(objectMapper.createObjectNode().put("capabilityId", "mcp.search.query"));
+
+        var result = executor.execute(new DagNodeExecutionContext(
+                new DagWorkflowRun(), node, objectMapper.createObjectNode().put("query", "Agent"), 1));
+
+        assertThat(result.output().path("answer").asText()).isEqualTo("统一调用结果");
+        verify(invocationService).invoke(any());
     }
 
     private Node node(String id, NodeType type) {

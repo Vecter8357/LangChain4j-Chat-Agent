@@ -137,10 +137,16 @@ public class DagWorkflowCompiler {
             }
         }
         if (node.getType() == NodeType.MCP_TOOL && node.getConfig() != null) {
+            String capabilityId = node.getConfig().path("capabilityId").asText();
             String operation = node.getConfig().path("operation").asText("research");
-            if (!"research".equalsIgnoreCase(operation)) {
-                errors.add("MCP_TOOL MVP 当前只支持 research 操作: " + operation);
+            if (!StringUtils.hasText(capabilityId) && !"research".equalsIgnoreCase(operation)) {
+                errors.add("MCP_TOOL 必须配置 config.capabilityId，或使用兼容 research 操作: " + operation);
             }
+        }
+        if (node.getType() == NodeType.AGENT
+                && (node.getConfig() == null
+                || !StringUtils.hasText(node.getConfig().path("systemPrompt").asText()))) {
+            errors.add("AGENT 节点 " + node.getId() + " 必须配置 config.systemPrompt");
         }
     }
 

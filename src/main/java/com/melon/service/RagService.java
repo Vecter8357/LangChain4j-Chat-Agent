@@ -10,13 +10,12 @@ import dev.langchain4j.data.document.parser.apache.pdfbox.ApachePdfBoxDocumentPa
 import dev.langchain4j.data.document.splitter.DocumentSplitters;
 import dev.langchain4j.data.embedding.Embedding;
 import dev.langchain4j.data.segment.TextSegment;
-import dev.langchain4j.memory.chat.MessageWindowChatMemory;
 import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.model.embedding.EmbeddingModel;
-import dev.langchain4j.rag.content.retriever.ContentRetriever;
-import dev.langchain4j.rag.content.retriever.EmbeddingStoreContentRetriever;
-import dev.langchain4j.service.AiServices;
 import dev.langchain4j.store.embedding.EmbeddingStore;
+import dev.langchain4j.store.embedding.EmbeddingSearchRequest;
+import dev.langchain4j.store.embedding.EmbeddingMatch;
+import dev.langchain4j.store.embedding.filter.MetadataFilterBuilder;
 import dev.langchain4j.store.embedding.inmemory.InMemoryEmbeddingStore;
 import com.melon.config.properties.RagProperties;
 import lombok.extern.slf4j.Slf4j;
@@ -29,6 +28,9 @@ import java.nio.file.Paths;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+
+import static com.melon.prompt.Langchain4jPrompt.RAG_QUERY;
 
 /**
  * RAG服务类
@@ -54,12 +56,16 @@ public class RagService {
     // 文档分割器
     private final DocumentSplitter documentSplitter;
     
-    // 内容检索器
-    private final ContentRetriever contentRetriever;
-    
-    // 记录文件ID到文档片段的映射
-    private final Map<String, List<TextSegment>> fileSegmentsMap = new HashMap<>();
+    private final int maxResults;
 
+    private final double minScore;
+
+    // 记录文件ID到向量ID的映射，确保删除文件时能够准确清理向量。
+    private final Map<String, List<String>> fileEmbeddingIdsMap = new ConcurrentHashMap<>();
+
+    /**
+     * 创建 RAG 服务并初始化文档解析器、分段器及检索参数。
+     */
     @Autowired
     public RagService(ChatModel chatLanguageModel,
                       FileStorageService fileStorageService,
@@ -83,13 +89,8 @@ public class RagService {
                 ragProperties.getSplitter().getMaxOverlapSize()
         );
         
-        // 初始化内容检索器
-        this.contentRetriever = EmbeddingStoreContentRetriever.builder()
-                .embeddingStore(embeddingStore)
-                .embeddingModel(embeddingModel)
-                .maxResults(ragProperties.getSplitter().getMaxResults())
-                .minScore(ragProperties.getSplitter().getMinScore())
-                .build();
+        this.maxResults = ragProperties.getSplitter().getMaxResults();
+        this.minScore = ragProperties.getSplitter().getMinScore();
         
         log.info("RAG服务初始化完成");
     }
@@ -114,10 +115,8 @@ public class RagService {
             
             // 为片段创建嵌入并存储
             List<Embedding> embeddings = embeddingModel.embedAll(segments).content();
-            embeddingStore.addAll(embeddings, segments);
-            
-            // 记录文件ID到分段的映射
-            fileSegmentsMap.put(file.getId(), segments);
+            List<String> embeddingIds = embeddingStore.addAll(embeddings, segments);
+            fileEmbeddingIdsMap.put(file.getId(), embeddingIds);
             
             // 更新文件状态
             file.setLoadedToRag(true);
@@ -136,13 +135,9 @@ public class RagService {
      * @param fileId 文件ID
      */
     public void removeFileFromRag(String fileId) {
-        List<TextSegment> segments = fileSegmentsMap.get(fileId);
-        if (segments != null) {
-            // 从嵌入存储中移除所有相关分段
-            for (TextSegment segment : segments) {
-                embeddingStore.remove(segment.text());
-            }
-            fileSegmentsMap.remove(fileId);
+        List<String> embeddingIds = fileEmbeddingIdsMap.remove(fileId);
+        if (embeddingIds != null && !embeddingIds.isEmpty()) {
+            embeddingStore.removeAll(embeddingIds);
             log.info("已从RAG系统中移除文件: {}", fileId);
         }
     }
@@ -161,20 +156,13 @@ public class RagService {
             // 先加载未加载过的文件
             List<UploadFile> files = fileStorageService.getByIds(fileIds);
             for (UploadFile file : files) {
-                if (!file.isLoadedToRag()) {
+                if (!fileEmbeddingIdsMap.containsKey(file.getId())) {
                     loadFileToRag(file);
                 }
             }
             
-            // 创建问答助手
-            RagChatService chatService = AiServices.builder(RagChatService.class)
-                    .chatModel(chatLanguageModel)
-                    .contentRetriever(contentRetriever)
-                    .chatMemory(MessageWindowChatMemory.withMaxMessages(10))
-                    .build();
-            
-            // 获取回答
-            String answer = chatService.chat(question);
+            String context = retrieveContext(question, fileIds);
+            String answer = chatLanguageModel.chat(String.format(RAG_QUERY, context, question));
             log.info("RAG回答: {}", answer);
             return answer;
         } catch (Exception e) {
@@ -184,10 +172,44 @@ public class RagService {
     }
 
     /**
-     * RAG聊天服务接口
+     * 在指定文件集合内执行向量检索并返回带来源和相似度的文本片段。
+     *
+     * @param question 检索问题
+     * @param fileIds 本次允许检索的文件 ID
+     * @return 可供 Agent 观察和引用的上下文
      */
-    interface RagChatService {
-        String chat(String message);
+    public String retrieveContext(String question, List<String> fileIds) {
+        if (fileIds == null || fileIds.isEmpty()) {
+            throw new IllegalArgumentException("fileIds 不能为空");
+        }
+        List<UploadFile> files = fileStorageService.getByIds(fileIds);
+        for (UploadFile file : files) {
+            if (!fileEmbeddingIdsMap.containsKey(file.getId())) {
+                loadFileToRag(file);
+            }
+        }
+        Embedding queryEmbedding = embeddingModel.embed(question).content();
+        var filter = MetadataFilterBuilder.metadataKey("file_id").isIn(fileIds);
+        var request = EmbeddingSearchRequest.builder()
+                .queryEmbedding(queryEmbedding)
+                .maxResults(maxResults)
+                .minScore(minScore)
+                .filter(filter)
+                .build();
+        List<EmbeddingMatch<TextSegment>> matches = embeddingStore.search(request).matches();
+        if (matches.isEmpty()) {
+            return "未在指定文件中检索到足够相关的内容。";
+        }
+        StringBuilder context = new StringBuilder();
+        for (int index = 0; index < matches.size(); index++) {
+            EmbeddingMatch<TextSegment> match = matches.get(index);
+            TextSegment segment = match.embedded();
+            context.append("[片段 ").append(index + 1)
+                    .append(" | 文件: ").append(segment.metadata().getString("file_name"))
+                    .append(" | 相似度: ").append(String.format("%.4f", match.score()))
+                    .append("]\n").append(segment.text()).append("\n\n");
+        }
+        return context.toString().trim();
     }
 
     /**
@@ -203,6 +225,9 @@ public class RagService {
         return fileName.substring(fileName.lastIndexOf(".") + 1);
     }
 
+    /**
+     * 优先使用 Docling 解析，允许时回退到原生解析器。
+     */
     private Document parseDocument(UploadFile file, String fileExtension) throws IOException {
         return doclingDocumentProcessor.convertToDocument(file, fileExtension)
                 .orElseGet(() -> {
@@ -217,6 +242,9 @@ public class RagService {
                 });
     }
 
+    /**
+     * 使用文件扩展名对应的原生解析器读取文档。
+     */
     private Document parseWithNativeParser(UploadFile file, String fileExtension) throws IOException {
         DocumentParser parser = documentParsers.get(fileExtension);
 
@@ -233,6 +261,9 @@ public class RagService {
         return document;
     }
 
+    /**
+     * 为每个文档片段写入文件 ID、文件名和片段序号，供隔离检索和引用使用。
+     */
     private void enrichSegmentsMetadata(List<TextSegment> segments, UploadFile file) {
         for (int i = 0; i < segments.size(); i++) {
             Metadata metadata = segments.get(i).metadata();

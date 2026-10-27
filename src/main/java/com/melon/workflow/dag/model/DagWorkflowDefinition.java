@@ -62,6 +62,7 @@ public class DagWorkflowDefinition {
     public enum NodeType {
         START,
         LLM,
+        AGENT,
         MCP_TOOL,
         CONDITION,
         END

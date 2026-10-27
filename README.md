@@ -234,6 +234,68 @@ Invoke-RestMethod "http://localhost:8898/api/dag-workflows/runs/$($run.runId)"
 
 这是执行内核的第一阶段：工作流定义随启动请求提交，运行状态以 Redis 单 Key 保存，调度使用本地线程池。工作流定义版本库、持久消息队列、人工节点、动态 `FOREACH/JOIN`、MCP Server 注册中心和可视化画布尚未包含在该 MVP 中。
 
+## Agent 平台内核
+
+项目包含三个相互独立但可以组合使用的核心组件：
+
+- Agent Runtime：执行“模型决策、能力调用、观察结果、继续或结束”的多轮循环。
+- Capability Registry：保存 Agent 可使用的能力、模型工具名、输入 Schema 和提供方信息。
+- MCP Invocation Service：管理 MCP 长连接、发现 Tools、校验参数并执行调用。
+
+配置一个 stdio MCP Server：
+
+```yaml
+agent-platform:
+  mcp:
+    servers:
+      web-fetch:
+        enabled: true
+        transport: STDIO
+        command: ["uvx", "mcp-server-fetch"]
+        timeout: 120s
+```
+
+也可以配置 Streamable HTTP：
+
+```yaml
+agent-platform:
+  mcp:
+    servers:
+      remote-tools:
+        enabled: true
+        transport: STREAMABLE_HTTP
+        url: https://example.com/mcp
+        headers:
+          Authorization: ${REMOTE_MCP_AUTHORIZATION:}
+```
+
+服务启动后，先发现并注册 MCP Tools：
+
+```text
+POST /api/agent-platform/mcp/servers/web-fetch/refresh
+GET  /api/agent-platform/capabilities
+```
+
+然后运行 Agent：
+
+```text
+POST /api/agent-platform/runs
+Content-Type: application/json
+```
+
+请求示例见 `examples/agent-run-example.json`。Agent 只能看到 `capabilityIds` 明确授权的能力，达到 `maxSteps` 后会自动停止。DAG 工作流也已支持 `AGENT` 节点，节点通过 `config.systemPrompt`、`config.capabilityIds` 和输入中的 `objective` 启动同一个 Agent Runtime。
+
+现有功能已统一接入这套内核：
+
+- 普通聊天直接进入 Agent Runtime，由模型在已授权能力中自主选择，不再先调用模型进行工具分类。
+- GitHub、Fetch 和文章改编研究不再各自创建 MCP Client，统一复用 MCP Connection Manager。
+- `tool-security.github`、`tool-security.fetch` 和 `rewrite-workflow.research` 会自动映射为平台 MCP Server，原配置继续有效。
+- 文件系统只读操作注册为 `LOCAL_TOOL` Capability；写入和删除不会自动暴露给通用 Agent。
+- 上传文档检索注册为 `KNOWLEDGE` Capability，并按照本次请求的 `fileIds` 隔离检索范围。
+- DAG 的 `MCP_TOOL` 节点可通过 `config.capabilityId` 调用任意已注册 MCP Tool；原来的 `operation: research` 仍兼容。
+
+普通聊天入口仍为 `POST /api/ai/stream`，但其内部已经统一走 Agent Runtime。返回仍采用 SSE，当前 Agent 完成后一次性发送最终答案；逐 Token 与逐 Step 事件流将在后续运行事件层实现。
+
 ## 启用文档问答
 
 文档信息临时保存在 Redis 中，向量由 Ollama 嵌入模型生成。先启动 Redis，再运行项目：
