@@ -1,0 +1,1049 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>langchain4j智能体</title>
+    <link rel="stylesheet" href="/css/chat.css">
+</head>
+<body>
+    <div class="container">
+        <div class="chat-workspace">
+            <aside class="agent-tools-sidebar" aria-label="Agent Tools">
+                <div class="agent-tools-heading">
+                    <span class="agent-tools-kicker">WORKSPACE</span>
+                    <h1>Agent Tools</h1>
+                    <p>选择本轮对话使用的智能体</p>
+                </div>
+                <div class="agent-tool-list" role="listbox" aria-label="可用智能体">
+                    <button type="button" class="agent-tool-card active" data-agent-tool="chat" role="option" aria-selected="true">
+                        <span class="agent-tool-icon" aria-hidden="true">AI</span>
+                        <span class="agent-tool-copy">
+                            <strong>智能问答</strong>
+                            <small>自动路由 GitHub、网页、文件与 RAG</small>
+                        </span>
+                        <span class="agent-tool-check" aria-hidden="true">✓</span>
+                    </button>
+                    <button type="button" class="agent-tool-card" data-agent-tool="rewrite" role="option" aria-selected="false">
+                        <span class="agent-tool-icon rewrite" aria-hidden="true">文</span>
+                        <span class="agent-tool-copy">
+                            <strong>颠覆性改编</strong>
+                            <small>多模型接力、MCP 研究与质量回路</small>
+                        </span>
+                        <span class="agent-tool-check" aria-hidden="true">✓</span>
+                    </button>
+                </div>
+                <div class="rewrite-style-control agent-hidden" id="rewrite-style-control">
+                    <label for="rewrite-output-style">输出风格</label>
+                    <select id="rewrite-output-style">
+                        <option value="LITERARY_PROSE" selected>文学散文</option>
+                        <option value="PRESERVE_ORIGINAL_GENRE">保持原文体裁</option>
+                        <option value="EXPERIMENTAL">文体实验</option>
+                        <option value="FICTION">小说化改编</option>
+                        <option value="DRAMA_SCRIPT">戏剧/剧本</option>
+                        <option value="DOSSIER_EPISTOLARY">档案或书信体</option>
+                    </select>
+                    <small id="rewrite-style-description">连续的文学段落，不使用档案、公文或报告格式。</small>
+                </div>
+                <div class="agent-tool-help" id="agent-tool-help">
+                    <strong>智能问答</strong>
+                    <span>输入问题，系统会自动判断并调用合适的工具。</span>
+                </div>
+            </aside>
+        <div class="chat-container">
+            <div class="chat-header">
+                <h2 id="chat-title">智能问答</h2>
+                <p id="chat-subtitle">langchain4j智能体 - 自动选择最适合的工具，智能回答您的各类问题</p>
+            </div>
+            <div class="chat-messages" id="chat-messages">
+                <div class="message ai">
+                    <div class="message-content">
+                        <div class="tool-badge">AI</div>
+                        您好！我是langchain4j智能体。我可以帮您查询GitHub信息、分析网页内容、操作文件系统或回答一般问题。<br><br>
+                        <strong>您可以尝试这些问题：</strong><br>
+                        - <a href="#" class="example-link" data-text="查询LangChain4j项目的最新提交历史">查询langChain4j项目的最新提交历史</a><br>
+                        - <a href="#" class="example-link" data-text="分析并总结 https://www.melon6.com 网页的主要内容">分析并总结网页的主要内容</a><br>
+                        - <a href="#" class="example-link" data-text="列出当前目录下的所有文件">列出当前目录下的所有文件</a><br>
+                        <br>请告诉我您需要什么帮助？
+                    </div>
+                </div>
+                <!-- 消息会动态添加到这里 -->
+            </div>
+
+            <div class="chat-input-container">
+                <form id="chat-form" class="chat-form">
+                    <div class="active-agent-pill" id="active-agent-pill">
+                        <span class="active-agent-dot"></span>
+                        <span id="active-agent-name">智能问答</span>
+                    </div>
+                    <div class="file-tags-container" id="file-tags-container">
+                        <!-- 文件标签将被动态添加到这里 -->
+                    </div>
+                    <div class="input-wrapper">
+                        <label for="file-upload" class="upload-button" id="upload-button" title="上传文件(最多3个)">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"></path>
+                            </svg>
+                        </label>
+                        <textarea id="chat-input" class="chat-input" placeholder="你想了解什么？" rows="3"></textarea>
+                        <button type="submit" class="send-button" id="send-button" title="发送">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <line x1="12" y1="19" x2="12" y2="5"></line>
+                                <polyline points="5 12 12 5 19 12"></polyline>
+                            </svg>
+                        </button>
+                    </div>
+                    <input type="file" id="file-upload" multiple accept=".pdf,.txt,.md,.html,.doc,.docx,.ppt,.pptx,.xls,.xlsx" style="display: none;">
+                </form>
+            </div>
+            
+            <!-- 移除旧的取消按钮 -->
+        </div>
+        </div>
+    </div>
+
+    <footer>
+        <p>&copy; 2026 Vecter <a href="https://github.com/melon1010" target="_blank">GitHub</a></p>
+    </footer>
+
+    <div class="upload-files-container" id="upload-files-container">
+        <div class="upload-files-header">
+            <h3>已上传文件</h3>
+            <button id="close-files-btn" class="close-files-btn">&times;</button>
+        </div>
+        <div class="upload-files-list" id="upload-files-list">
+            <!-- 上传的文件将显示在这里 -->
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const chatForm = document.getElementById('chat-form');
+            const chatInput = document.getElementById('chat-input');
+            const sendButton = document.getElementById('send-button');
+            const chatMessages = document.getElementById('chat-messages');
+            const exampleLinks = document.querySelectorAll('.example-link');
+            const fileUpload = document.getElementById('file-upload');
+            const uploadButton = document.getElementById('upload-button');
+            const uploadFilesContainer = document.getElementById('upload-files-container');
+            const uploadFilesList = document.getElementById('upload-files-list');
+            const closeFilesBtn = document.getElementById('close-files-btn');
+            const fileTagsContainer = document.getElementById('file-tags-container');
+            const agentToolButtons = document.querySelectorAll('.agent-tool-card');
+            const agentToolHelp = document.getElementById('agent-tool-help');
+            const activeAgentName = document.getElementById('active-agent-name');
+            const chatTitle = document.getElementById('chat-title');
+            const chatSubtitle = document.getElementById('chat-subtitle');
+            const rewriteStyleControl = document.getElementById('rewrite-style-control');
+            const rewriteOutputStyle = document.getElementById('rewrite-output-style');
+            const rewriteStyleDescription = document.getElementById('rewrite-style-description');
+            
+            let uploadedFiles = [];
+            const MAX_FILES = 3;
+            let controller = null; // 用于中断回复的AbortController
+            let activeAgentTool = 'chat';
+
+            const agentToolConfig = {
+                chat: {
+                    name: '智能问答',
+                    title: '智能问答',
+                    subtitle: 'langchain4j智能体 - 自动选择最适合的工具，智能回答您的各类问题',
+                    placeholder: '你想了解什么？',
+                    help: '输入问题，系统会自动判断并调用合适的工具。'
+                },
+                rewrite: {
+                    name: '颠覆性改编',
+                    title: '短文颠覆性改编',
+                    subtitle: '多模型接力创作 · MCP 网络研究 · 质量审核与自动重写',
+                    placeholder: '请粘贴需要重编或改编的完整短文…',
+                    help: '输入原文后发送。Agent 将分析、头脑风暴、研究、创作、评审并生成终稿。'
+                }
+            };
+
+            const outputStyleDescriptions = {
+                LITERARY_PROSE: '连续的文学段落，不使用档案、公文、报告、新闻或剧本格式。',
+                PRESERVE_ORIGINAL_GENRE: '保持模型识别出的原文体裁，只改变视角、人物关系、情节或结局。',
+                EXPERIMENTAL: '允许明显的结构与文体实验，同时保持完整性和可读性。',
+                FICTION: '使用场景、行动、对话与冲突，形成完整的小说叙事。',
+                DRAMA_SCRIPT: '使用场景、角色、动作和对白构成戏剧或影视剧本。',
+                DOSSIER_EPISTOLARY: '使用档案、报告、书信、日记或材料汇编推进叙事。'
+            };
+
+            rewriteOutputStyle.addEventListener('change', function() {
+                rewriteStyleDescription.textContent = outputStyleDescriptions[this.value] || '';
+            });
+
+            agentToolButtons.forEach(button => {
+                button.addEventListener('click', function() {
+                    if (controller) {
+                        alert('当前任务正在执行，请等待完成后再切换 Agent Tool。');
+                        return;
+                    }
+                    selectAgentTool(this.dataset.agentTool);
+                });
+            });
+
+            function selectAgentTool(toolName) {
+                const config = agentToolConfig[toolName];
+                if (!config) return;
+                activeAgentTool = toolName;
+                agentToolButtons.forEach(button => {
+                    const selected = button.dataset.agentTool === toolName;
+                    button.classList.toggle('active', selected);
+                    button.setAttribute('aria-selected', String(selected));
+                });
+                activeAgentName.textContent = config.name;
+                chatTitle.textContent = config.title;
+                chatSubtitle.textContent = config.subtitle;
+                chatInput.placeholder = config.placeholder;
+                agentToolHelp.innerHTML = '';
+                const helpTitle = document.createElement('strong');
+                helpTitle.textContent = config.name;
+                const helpText = document.createElement('span');
+                helpText.textContent = config.help;
+                agentToolHelp.append(helpTitle, helpText);
+                uploadButton.classList.toggle('agent-hidden', toolName === 'rewrite');
+                fileTagsContainer.classList.toggle('agent-hidden', toolName === 'rewrite');
+                rewriteStyleControl.classList.toggle('agent-hidden', toolName !== 'rewrite');
+                chatInput.classList.toggle('rewrite-input', toolName === 'rewrite');
+                chatInput.focus();
+            }
+            
+            // 文件上传相关事件处理
+            uploadButton.addEventListener('click', function(e) {
+                e.preventDefault();
+                if (uploadedFiles.length < MAX_FILES) {
+                    fileUpload.click();
+                } else {
+                    alert('最多只能上传3个文件!');
+                }
+            });
+            
+            fileUpload.addEventListener('change', function() {
+                if (this.files.length > 0) {
+                    const newFiles = Array.from(this.files);
+                    
+                    // 检查文件总数是否超过限制
+                    if (uploadedFiles.length + newFiles.length > MAX_FILES) {
+                        alert(`最多只能上传${MAX_FILES}个文件!`);
+                        return;
+                    }
+                    
+                    // 准备要上传的文件
+                    const formData = new FormData();
+                    newFiles.forEach(file => {
+                        formData.append('files', file);
+                    });
+                    
+                    // 显示上传中状态
+                    sendButton.disabled = true;
+                    uploadButton.disabled = true;
+                    
+                    // 发送文件到服务器
+                    fetch('/api/ai/upload', {
+                        method: 'POST',
+                        body: formData
+                    })
+                    .then(response => {
+                        if (!response.ok) {
+                            throw new Error('文件上传失败!');
+                        }
+                        return response.json();
+                    })
+                    .then(data => {
+                        // 更新已上传文件列表
+                        uploadedFiles = uploadedFiles.concat(data);
+                        updateUploadedFilesList();
+                        updateFileTags();
+                        // 清空文件输入以便下次上传
+                        fileUpload.value = '';
+                    })
+                    .catch(error => {
+                        alert(`上传失败: ${error.message}`);
+                        console.error('上传错误:', error);
+                    })
+                    .finally(() => {
+                        // 恢复按钮状态
+                        sendButton.disabled = false;
+                        uploadButton.disabled = false;
+                    });
+                }
+            });
+            
+            // 更新文件标签显示
+            function updateFileTags() {
+                fileTagsContainer.innerHTML = '';
+                fileTagsContainer.classList.remove('expanded');
+                
+                if (uploadedFiles.length === 0) {
+                    // 不再需要调整padding
+                    return;
+                }
+                
+                uploadedFiles.forEach((file, index) => {
+                    const fileTag = document.createElement('div');
+                    fileTag.className = 'file-tag';
+                    
+                    const fileTagName = document.createElement('span');
+                    fileTagName.className = 'file-tag-name';
+                    fileTagName.textContent = file.originalFileName;
+                    fileTagName.title = file.originalFileName;
+                    
+                    const removeBtn = document.createElement('button');
+                    removeBtn.className = 'file-tag-remove';
+                    removeBtn.textContent = '×';
+                    removeBtn.setAttribute('aria-label', '删除文件');
+                    removeBtn.addEventListener('click', (e) => {
+                        e.preventDefault();
+                        e.stopPropagation(); // 防止事件冒泡
+                        removeFile(index, file.id);
+                    });
+                    
+                    fileTag.appendChild(fileTagName);
+                    fileTag.appendChild(removeBtn);
+                    
+                    fileTagsContainer.appendChild(fileTag);
+                });
+                
+                // 如果文件较多，添加展开/收起功能
+                if (uploadedFiles.length > 2) {
+                    // 添加点击容器展开/收起的功能
+                    fileTagsContainer.addEventListener('click', function() {
+                        this.classList.toggle('expanded');
+                    });
+                    
+                    // 添加文件计数按钮
+                    if (!fileTagsContainer.classList.contains('expanded')) {
+                        const fileCount = document.createElement('div');
+                        fileCount.className = 'file-count';
+                        fileCount.textContent = `${uploadedFiles.length} 个文件`;
+                        fileCount.addEventListener('click', (e) => {
+                            e.stopPropagation();
+                            fileTagsContainer.classList.toggle('expanded');
+                        });
+                        fileTagsContainer.appendChild(fileCount);
+                    }
+                }
+                
+                // 为文件标签容器添加点击事件
+                fileTagsContainer.addEventListener('click', function(e) {
+                    // 这里可以添加其他交互，比如显示文件详情等
+                    if (e.target === this) {
+                        this.classList.toggle('expanded');
+                    }
+                });
+            }
+            
+            // 显示/隐藏文件列表
+            uploadButton.addEventListener('dblclick', function(e) {
+                e.preventDefault();
+                toggleFilesPanel();
+            });
+            
+            closeFilesBtn.addEventListener('click', function() {
+                uploadFilesContainer.style.display = 'none';
+            });
+            
+            // 更新上传文件列表显示
+            function updateUploadedFilesList() {
+                uploadFilesList.innerHTML = '';
+                
+                if (uploadedFiles.length === 0) {
+                    uploadFilesList.innerHTML = '<div class="file-item">没有已上传的文件</div>';
+                    return;
+                }
+                
+                uploadedFiles.forEach((file, index) => {
+                    const fileItem = document.createElement('div');
+                    fileItem.className = 'file-item';
+                    
+                    const fileInfo = document.createElement('div');
+                    fileInfo.className = 'file-info';
+                    
+                    const fileName = document.createElement('div');
+                    fileName.className = 'file-name';
+                    fileName.textContent = file.originalFileName;
+                    
+                    const fileSize = document.createElement('div');
+                    fileSize.className = 'file-size';
+                    fileSize.textContent = formatFileSize(file.size);
+                    
+                    fileInfo.appendChild(fileName);
+                    fileInfo.appendChild(fileSize);
+                    
+                    const removeBtn = document.createElement('button');
+                    removeBtn.className = 'file-remove';
+                    removeBtn.textContent = '×';
+                    removeBtn.addEventListener('click', () => removeFile(index, file.id));
+                    
+                    fileItem.appendChild(fileInfo);
+                    fileItem.appendChild(removeBtn);
+                    
+                    uploadFilesList.appendChild(fileItem);
+                });
+                
+                // 更新上传按钮状态
+                uploadButton.disabled = uploadedFiles.length >= MAX_FILES;
+            }
+            
+            // 移除文件
+            function removeFile(index, fileId) {
+                fetch(`/api/ai/upload/${fileId}`, {
+                    method: 'DELETE'
+                })
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('删除文件失败!');
+                    }
+                    uploadedFiles.splice(index, 1);
+                    updateUploadedFilesList();
+                    updateFileTags();
+                })
+                .catch(error => {
+                    alert(`删除失败: ${error.message}`);
+                    console.error('删除错误:', error);
+                });
+            }
+            
+            // 清空所有文件
+            function clearAllFiles() {
+                const promises = uploadedFiles.map(file => 
+                    fetch(`/api/ai/upload/${file.id}`, {
+                        method: 'DELETE'
+                    })
+                );
+                
+                Promise.all(promises)
+                    .then(() => {
+                        uploadedFiles = [];
+                        updateUploadedFilesList();
+                        updateFileTags();
+                    })
+                    .catch(error => {
+                        console.error('清空文件失败:', error);
+                    });
+            }
+            
+            // 切换文件面板显示
+            function toggleFilesPanel() {
+                if (uploadFilesContainer.style.display === 'flex') {
+                    uploadFilesContainer.style.display = 'none';
+                } else {
+                    uploadFilesContainer.style.display = 'flex';
+                    updateUploadedFilesList();
+                }
+            }
+            
+            // 格式化文件大小
+            function formatFileSize(bytes) {
+                if (bytes < 1024) return bytes + ' B';
+                if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(2) + ' KB';
+                return (bytes / (1024 * 1024)).toFixed(2) + ' MB';
+            }
+            
+            // 自动调整输入框高度
+            chatInput.addEventListener('input', function() {
+                this.style.height = 'auto';
+                this.style.height = (this.scrollHeight > 150 ? 150 : this.scrollHeight) + 'px';
+            });
+            
+            // 处理示例链接点击
+            exampleLinks.forEach(link => {
+                link.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    const text = this.getAttribute('data-text');
+                    chatInput.value = text;
+                    chatInput.style.height = 'auto';
+                    chatInput.style.height = (chatInput.scrollHeight > 150 ? 150 : chatInput.scrollHeight) + 'px';
+                    chatInput.focus();
+                });
+            });
+            
+            // 回车键发送消息（Shift+Enter换行）
+            chatInput.addEventListener('keydown', function(e) {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault(); // 阻止默认的换行行为
+                    sendButton.click(); // 触发发送按钮点击事件
+                }
+            });
+            
+            // 处理表单提交
+            chatForm.addEventListener('submit', async function(e) {
+                e.preventDefault();
+                
+                const input = chatInput.value.trim();
+                if (!input) return;
+                
+                // 如果当前正在进行请求，则取消请求
+                if (controller) {
+                    controller.abort();
+                    controller = null;
+                    sendButton.disabled = false;
+                    uploadButton.disabled = false;
+                    
+                    // 在当前AI回复后添加取消提示
+                    const aiMessages = document.querySelectorAll('.message.ai');
+                    if (aiMessages.length > 0) {
+                        const lastAiMessage = aiMessages[aiMessages.length - 1];
+                        const messageContent = lastAiMessage.querySelector('.message-content');
+                        if (messageContent) {
+                            messageContent.innerHTML += '<div class="cancel-notice">[回复已中断]</div>';
+                        }
+                    }
+                    return;
+                }
+                
+                // 显示用户消息
+                addMessage('human', input);
+                
+                // 清空输入框，但保持文件标签
+                chatInput.value = '';
+                chatInput.style.height = 'auto';
+                
+                // 显示加载中
+                const typingIndicator = document.createElement('div');
+                typingIndicator.className = 'typing-indicator';
+                typingIndicator.innerHTML = '<div class="typing-dot"></div><div class="typing-dot"></div><div class="typing-dot"></div>';
+                chatMessages.appendChild(typingIndicator);
+                scrollToBottom();
+                
+                try {
+                    // 禁用发送按钮（变为取消状态）
+                    sendButton.disabled = true;
+                    uploadButton.disabled = true;
+                    
+                    // 创建新的AbortController
+                    controller = new AbortController();
+
+                    if (activeAgentTool === 'rewrite') {
+                        await processRewriteWorkflow(input, typingIndicator, controller.signal);
+                        return;
+                    }
+                    
+                    // 构建包含上传文件ID的请求
+                    const requestBody = {
+                        input: input,
+                        fileIds: uploadedFiles.map(file => file.id)
+                    };
+                    
+                    // 发送请求，带上signal
+                    const response = await fetch('/api/ai/stream', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify(requestBody),
+                        signal: controller.signal
+                    });
+                    
+                    if (!response.ok) {
+                        throw new Error('请求失败');
+                    }
+                    
+                    // 移除加载指示器
+                    chatMessages.removeChild(typingIndicator);
+                    
+                    // 准备接收流式响应
+                    const reader = response.body.getReader();
+                    const decoder = new TextDecoder();
+                    
+                    // 创建AI消息元素
+                    const aiMessageDiv = document.createElement('div');
+                    aiMessageDiv.className = 'message ai';
+                    
+                    const messageContent = document.createElement('div');
+                    messageContent.className = 'message-content markdown';
+                    
+                    const toolBadge = document.createElement('div');
+                    toolBadge.className = 'tool-badge';
+                    toolBadge.textContent = 'AI';
+                    
+                    messageContent.appendChild(toolBadge);
+                    aiMessageDiv.appendChild(messageContent);
+                    chatMessages.appendChild(aiMessageDiv);
+                    
+                    let fullText = '';
+                    
+                    // 处理流式响应
+                    while (true) {
+                        const { done, value } = await reader.read();
+                        
+                        if (done) {
+                            break;
+                        }
+                        
+                        const text = decoder.decode(value);
+                        const lines = text.split('\n');
+                        
+                        for (const line of lines) {
+                            if (line.trim() && line.startsWith('data:')) {
+                                const content = line.substring(5).trim();
+                                if (content !== '[DONE]') {
+                                    fullText += content;
+                                    messageContent.innerHTML = fullText;
+                                    scrollToBottom();
+                                }
+                            }
+                        }
+                    }
+                    
+                    // 根据响应内容中的关键词猜测使用的工具类型
+                    if (fullText.toLowerCase().includes('github') || 
+                        fullText.toLowerCase().includes('仓库') || 
+                        fullText.toLowerCase().includes('提交')) {
+                        toolBadge.textContent = 'GitHub';
+                    } else if (fullText.toLowerCase().includes('网页') || 
+                               fullText.toLowerCase().includes('url') || 
+                               fullText.toLowerCase().includes('网站')) {
+                        toolBadge.textContent = '网页';
+                    } else if (fullText.toLowerCase().includes('文件') || 
+                               fullText.toLowerCase().includes('目录') || 
+                               fullText.toLowerCase().includes('文件夹')) {
+                        toolBadge.textContent = '文件系统';
+                    } else if (uploadedFiles.length > 0) {
+                        toolBadge.textContent = '文档RAG';
+                    }
+                    
+                    // 消息发送成功后，清空所有上传的文件
+                    if (uploadedFiles.length > 0) {
+                        clearAllFiles();
+                    }
+                    
+                } catch (error) {
+                    console.error('Error:', error);
+                    // 如果不是手动中断的错误，才显示错误消息
+                    if (error.name !== 'AbortError') {
+                        addMessage('ai', '抱歉，处理您的请求时出错：' + error.message);
+                    }
+                } finally {
+                    // 重置控制器
+                    controller = null;
+                    
+                    // 启用发送按钮
+                    sendButton.disabled = false;
+                    uploadButton.disabled = false;
+                    
+                    // 如果有加载指示器，移除它
+                    if (document.querySelector('.typing-indicator')) {
+                        chatMessages.removeChild(document.querySelector('.typing-indicator'));
+                    }
+                }
+            });
+
+            async function processRewriteWorkflow(sourceText, typingIndicator, signal) {
+                const response = await fetch('/api/rewrite-workflows', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        title: '对话页短文改编',
+                        sourceText: sourceText,
+                        targetAudience: '普通中文读者',
+                        constraints: [],
+                        researchEnabled: true,
+                        outputStyle: rewriteOutputStyle.value
+                    }),
+                    signal: signal
+                });
+
+                if (!response.ok) {
+                    throw new Error(await readErrorMessage(response));
+                }
+
+                const started = await response.json();
+                if (typingIndicator.isConnected) {
+                    typingIndicator.remove();
+                }
+                const workflowView = createWorkflowMessage(started.workflowId);
+                await pollRewriteWorkflow(started.workflowId, workflowView, signal);
+            }
+
+            async function pollRewriteWorkflow(workflowId, workflowView, signal) {
+                const pauseStatuses = new Set([
+                    'AWAITING_DIRECTION_SELECTION',
+                    'COMPLETED',
+                    'NEEDS_REVIEW',
+                    'FAILED'
+                ]);
+                let attempts = 0;
+
+                while (attempts++ < 900) {
+                    const statusResponse = await fetch(`/api/rewrite-workflows/${workflowId}`, {
+                        signal: signal
+                    });
+                    if (!statusResponse.ok) {
+                        throw new Error(await readErrorMessage(statusResponse));
+                    }
+                    const state = await statusResponse.json();
+                    renderWorkflowState(workflowView, state);
+                    if (pauseStatuses.has(state.status)) {
+                        return state;
+                    }
+                    await waitForNextPoll(2000, signal);
+                }
+                throw new Error('工作流执行时间过长，请稍后使用 workflowId 查询结果：' + workflowId);
+            }
+
+            function createWorkflowMessage(workflowId) {
+                const messageDiv = document.createElement('div');
+                messageDiv.className = 'message ai workflow-message';
+
+                const messageContent = document.createElement('div');
+                messageContent.className = 'message-content workflow-message-content';
+
+                const badge = document.createElement('div');
+                badge.className = 'tool-badge workflow-badge';
+                badge.textContent = '颠覆性改编';
+
+                const card = document.createElement('div');
+                card.className = 'workflow-card';
+
+                const heading = document.createElement('div');
+                heading.className = 'workflow-heading';
+                const title = document.createElement('strong');
+                title.textContent = '多模型改编工作流';
+                const status = document.createElement('span');
+                status.className = 'workflow-status running';
+                status.textContent = '准备中';
+                heading.append(title, status);
+
+                const id = document.createElement('div');
+                id.className = 'workflow-id';
+                id.textContent = `workflowId: ${workflowId}`;
+
+                const style = document.createElement('div');
+                style.className = 'workflow-selected-style';
+                style.textContent = '输出风格：等待确认';
+
+                const node = document.createElement('div');
+                node.className = 'workflow-node';
+                node.textContent = '正在创建任务…';
+
+                const progressTrack = document.createElement('div');
+                progressTrack.className = 'workflow-progress-track';
+                const progressBar = document.createElement('div');
+                progressBar.className = 'workflow-progress-bar';
+                progressTrack.appendChild(progressBar);
+
+                const events = document.createElement('div');
+                events.className = 'workflow-events';
+
+                const result = document.createElement('div');
+                result.className = 'workflow-result';
+
+                card.append(heading, id, style, node, progressTrack, events, result);
+                messageContent.append(badge, card);
+                messageDiv.appendChild(messageContent);
+                chatMessages.appendChild(messageDiv);
+                scrollToBottom();
+
+                return { status, style, node, progressBar, events, result };
+            }
+
+            function renderWorkflowState(view, state) {
+                const nodeLabels = {
+                    QUEUED: '等待执行',
+                    ANALYZE: '分析原文文学结构',
+                    BRAINSTORM: '多角色头脑风暴',
+                    DIRECTION_TREND_MCP: 'MCP 网络热度检索',
+                    EVALUATE_DIRECTIONS: '评估阅读吸引力与网络热度',
+                    AWAITING_DIRECTION_SELECTION: '等待你选择改编方向',
+                    USER_DIRECTION_SELECTION: '已选择方向，准备继续',
+                    RESEARCH: 'MCP 网络研究',
+                    MCP_FETCH: '读取网络资料',
+                    WRITE_CANDIDATES: '创作候选改编稿',
+                    REVIEW: '对抗性文学评审',
+                    FINAL_EDIT: '生成终稿',
+                    QUALITY_REVIEW: '终稿质量审核',
+                    REVISE_FINAL: '根据审核意见重写',
+                    FINISHED: '工作流完成'
+                };
+                const progressByNode = {
+                    QUEUED: 3,
+                    ANALYZE: 12,
+                    BRAINSTORM: 25,
+                    DIRECTION_TREND_MCP: 34,
+                    EVALUATE_DIRECTIONS: 40,
+                    AWAITING_DIRECTION_SELECTION: 45,
+                    USER_DIRECTION_SELECTION: 48,
+                    RESEARCH: 54,
+                    MCP_FETCH: 58,
+                    WRITE_CANDIDATES: 65,
+                    REVIEW: 76,
+                    FINAL_EDIT: 86,
+                    QUALITY_REVIEW: 94,
+                    REVISE_FINAL: 90,
+                    FINISHED: 100
+                };
+                const statusLabels = {
+                    QUEUED: '排队中',
+                    RUNNING: '执行中',
+                    AWAITING_DIRECTION_SELECTION: '等待选择方向',
+                    COMPLETED: '已完成',
+                    NEEDS_REVIEW: '待人工审核',
+                    FAILED: '执行失败'
+                };
+                const outputStyleLabels = {
+                    LITERARY_PROSE: '文学散文',
+                    PRESERVE_ORIGINAL_GENRE: '保持原文体裁',
+                    EXPERIMENTAL: '文体实验',
+                    FICTION: '小说化改编',
+                    DRAMA_SCRIPT: '戏剧/剧本',
+                    DOSSIER_EPISTOLARY: '档案或书信体'
+                };
+
+                view.status.textContent = statusLabels[state.status] || state.status;
+                view.status.className = 'workflow-status ' + String(state.status || '').toLowerCase().replace(/_/g, '-');
+                view.style.textContent = `输出风格：${outputStyleLabels[state.outputStyle] || state.outputStyle || '文学散文'}`;
+                view.node.textContent = nodeLabels[state.currentNode] || state.currentNode || '处理中';
+                view.progressBar.style.width = `${progressByNode[state.currentNode] || 5}%`;
+
+                view.events.innerHTML = '';
+                const recentEvents = (state.events || []).slice(-5);
+                recentEvents.forEach(event => {
+                    const row = document.createElement('div');
+                    row.className = 'workflow-event';
+                    const dot = document.createElement('span');
+                    dot.className = 'workflow-event-dot ' + String(event.status || '').toLowerCase();
+                    const text = document.createElement('span');
+                    text.textContent = event.summary || event.node;
+                    row.append(dot, text);
+                    view.events.appendChild(row);
+                });
+
+                view.result.innerHTML = '';
+                if (state.status === 'AWAITING_DIRECTION_SELECTION') {
+                    renderDirectionSelection(view, state);
+                }
+                if ((state.selectedDirections || []).length > 0 && state.status !== 'AWAITING_DIRECTION_SELECTION') {
+                    const selected = document.createElement('div');
+                    selected.className = 'workflow-selected-directions';
+                    selected.textContent = '已选方向：' + state.selectedDirections
+                        .map(direction => direction.name || direction.id)
+                        .join('、');
+                    view.result.appendChild(selected);
+                }
+                if (state.qualityReport) {
+                    const score = document.createElement('div');
+                    score.className = 'workflow-score';
+                    score.textContent = `质量 ${state.qualityReport.overallScore}/100 · 体裁符合度 ${state.qualityReport.genreComplianceScore}/100`;
+                    view.result.appendChild(score);
+                }
+                if (state.finalDraft && ['COMPLETED', 'NEEDS_REVIEW'].includes(state.status)) {
+                    const details = document.createElement('details');
+                    details.className = 'workflow-final';
+                    details.open = true;
+                    const summary = document.createElement('summary');
+                    summary.textContent = state.status === 'COMPLETED' ? '查看最终改编稿' : '查看待审核改编稿';
+                    const finalText = document.createElement('div');
+                    finalText.className = 'workflow-final-text';
+                    finalText.textContent = state.finalDraft;
+                    details.append(summary, finalText);
+                    view.result.appendChild(details);
+                }
+                if (state.status === 'FAILED') {
+                    const failure = document.createElement('div');
+                    failure.className = 'workflow-failure';
+                    failure.textContent = state.failureReason || '工作流执行失败';
+                    view.result.appendChild(failure);
+                }
+                scrollToBottom();
+            }
+
+            function renderDirectionSelection(view, state) {
+                const maxSelections = Math.max(1, Number(state.maxDirectionSelections) || 1);
+                const directions = state.directions || [];
+                const panel = document.createElement('section');
+                panel.className = 'direction-selection-panel';
+
+                const heading = document.createElement('div');
+                heading.className = 'direction-selection-heading';
+                const title = document.createElement('strong');
+                title.textContent = '选择接下来要创作的方向';
+                const hint = document.createElement('span');
+                hint.textContent = `已按综合分排序，可选择 1–${maxSelections} 个`;
+                heading.append(title, hint);
+
+                const grid = document.createElement('div');
+                grid.className = 'direction-grid';
+                directions.forEach((direction, index) => {
+                    const label = document.createElement('label');
+                    label.className = 'direction-card';
+                    const input = document.createElement('input');
+                    input.type = maxSelections === 1 ? 'radio' : 'checkbox';
+                    input.name = `direction-${state.workflowId}`;
+                    input.value = direction.id;
+                    input.addEventListener('change', () => {
+                        if (maxSelections > 1) {
+                            const checked = grid.querySelectorAll('input:checked');
+                            if (checked.length > maxSelections) {
+                                input.checked = false;
+                            }
+                        }
+                        grid.querySelectorAll('.direction-card').forEach(card => {
+                            const control = card.querySelector('input');
+                            card.classList.toggle('selected', Boolean(control && control.checked));
+                        });
+                    });
+
+                    const content = document.createElement('div');
+                    content.className = 'direction-card-content';
+                    const cardTitle = document.createElement('div');
+                    cardTitle.className = 'direction-title';
+                    const rank = document.createElement('span');
+                    rank.className = 'direction-rank';
+                    rank.textContent = `#${index + 1}`;
+                    const name = document.createElement('strong');
+                    name.textContent = direction.name || direction.id;
+                    cardTitle.append(rank, name);
+
+                    const idea = document.createElement('p');
+                    idea.className = 'direction-idea';
+                    idea.textContent = direction.coreIdea || '';
+
+                    const scores = document.createElement('div');
+                    scores.className = 'direction-scores';
+                    scores.append(
+                        createDirectionScore('综合', direction.score, 'combined'),
+                        createDirectionScore('吸引力', direction.appealScore, 'appeal'),
+                        createDirectionScore(
+                            direction.networkHeatAvailable ? '网络热度' : '网络热度：无实时数据',
+                            direction.networkHeatAvailable ? direction.networkHeatScore : null,
+                            direction.networkHeatAvailable ? 'heat' : 'unavailable'
+                        )
+                    );
+
+                    const reasons = document.createElement('div');
+                    reasons.className = 'direction-reasons';
+                    const appealReason = document.createElement('p');
+                    appealReason.textContent = `吸引力：${direction.appealReason || '暂无说明'}`;
+                    const heatReason = document.createElement('p');
+                    heatReason.textContent = `热度：${direction.networkHeatReason || '无实时数据'}`;
+                    reasons.append(appealReason, heatReason);
+
+                    content.append(cardTitle, idea, scores, reasons);
+                    label.append(input, content);
+                    grid.appendChild(label);
+                });
+
+                const validation = document.createElement('div');
+                validation.className = 'direction-validation';
+                const continueButton = document.createElement('button');
+                continueButton.type = 'button';
+                continueButton.className = 'continue-workflow-button';
+                continueButton.textContent = '按所选方向继续创作';
+                continueButton.addEventListener('click', async () => {
+                    const directionIds = Array.from(grid.querySelectorAll('input:checked')).map(input => input.value);
+                    if (directionIds.length < 1 || directionIds.length > maxSelections) {
+                        validation.textContent = `请选择 1 到 ${maxSelections} 个方向`;
+                        return;
+                    }
+                    validation.textContent = '';
+                    await resumeRewriteWorkflow(state.workflowId, directionIds, view, panel);
+                });
+
+                panel.append(heading, grid, validation, continueButton);
+                view.result.appendChild(panel);
+            }
+
+            function createDirectionScore(label, score, type) {
+                const badge = document.createElement('span');
+                badge.className = `direction-score ${type}`;
+                badge.textContent = score === null || score === undefined ? label : `${label} ${score}/100`;
+                return badge;
+            }
+
+            async function resumeRewriteWorkflow(workflowId, directionIds, view, panel) {
+                if (controller) {
+                    const validation = panel.querySelector('.direction-validation');
+                    validation.textContent = '当前有其他请求正在处理，请稍后再试';
+                    return;
+                }
+
+                controller = new AbortController();
+                const controls = panel.querySelectorAll('input, button');
+                controls.forEach(control => control.disabled = true);
+                sendButton.disabled = true;
+                uploadButton.disabled = true;
+                try {
+                    const response = await fetch(`/api/rewrite-workflows/${workflowId}/directions`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ directionIds }),
+                        signal: controller.signal
+                    });
+                    if (!response.ok) {
+                        throw new Error(await readErrorMessage(response));
+                    }
+                    view.result.innerHTML = '<div class="workflow-resume-notice">已提交选择，继续执行后续创作…</div>';
+                    await pollRewriteWorkflow(workflowId, view, controller.signal);
+                } catch (error) {
+                    if (error.name !== 'AbortError') {
+                        const failure = document.createElement('div');
+                        failure.className = 'workflow-failure';
+                        failure.textContent = `继续执行失败：${error.message}`;
+                        view.result.replaceChildren(panel, failure);
+                        controls.forEach(control => control.disabled = false);
+                    }
+                } finally {
+                    controller = null;
+                    sendButton.disabled = false;
+                    uploadButton.disabled = uploadedFiles.length >= MAX_FILES;
+                }
+            }
+
+            async function readErrorMessage(response) {
+                try {
+                    const body = await response.json();
+                    return body.error || body.message || `请求失败 (${response.status})`;
+                } catch (error) {
+                    return `请求失败 (${response.status})`;
+                }
+            }
+
+            function waitForNextPoll(milliseconds, signal) {
+                return new Promise((resolve, reject) => {
+                    const timer = setTimeout(resolve, milliseconds);
+                    if (signal) {
+                        signal.addEventListener('abort', () => {
+                            clearTimeout(timer);
+                            reject(new DOMException('请求已取消', 'AbortError'));
+                        }, { once: true });
+                    }
+                });
+            }
+            
+            // 添加消息到聊天区域
+            function addMessage(type, content) {
+                const messageDiv = document.createElement('div');
+                messageDiv.className = `message ${type}`;
+                
+                const messageContent = document.createElement('div');
+                messageContent.className = 'message-content' + (type === 'ai' ? ' markdown' : '');
+                messageContent.textContent = content;
+                
+                if (type === 'ai') {
+                    const toolBadge = document.createElement('div');
+                    toolBadge.className = 'tool-badge';
+                    toolBadge.textContent = 'AI';
+                    messageContent.appendChild(toolBadge);
+                }
+                
+                messageDiv.appendChild(messageContent);
+                chatMessages.appendChild(messageDiv);
+                
+                scrollToBottom();
+            }
+            
+            // 滚动到底部
+            function scrollToBottom() {
+                chatMessages.scrollTop = chatMessages.scrollHeight;
+            }
+            
+            // 初始焦点
+            chatInput.focus();
+        });
+    </script>
+</body>
+</html>

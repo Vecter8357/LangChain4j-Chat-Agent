@@ -1,0 +1,135 @@
+{
+  "definition": {
+    "code": "article-rewrite-dag-mvp",
+    "name": "短文改编 DAG 示例",
+    "version": 1,
+    "inputSchema": {
+      "type": "object",
+      "required": ["sourceText"],
+      "properties": {
+        "sourceText": { "type": "string" }
+      }
+    },
+    "nodes": [
+      {
+        "id": "start",
+        "name": "开始",
+        "type": "START"
+      },
+      {
+        "id": "analyze",
+        "name": "分析是否需要研究",
+        "type": "LLM",
+        "inputMappings": {
+          "sourceText": {
+            "path": "$.nodes.start.output.sourceText"
+          }
+        },
+        "config": {
+          "role": "ANALYZER",
+          "instruction": "分析短文是否需要网络资料才能可靠改编。返回 researchNeeded 布尔值和 question 字符串。",
+          "responseMode": "JSON_SCHEMA",
+          "outputSchema": {
+            "type": "object",
+            "required": ["researchNeeded", "question"],
+            "properties": {
+              "researchNeeded": { "type": "boolean" },
+              "question": { "type": "string" }
+            }
+          }
+        },
+        "retryPolicy": {
+          "maxAttempts": 2
+        }
+      },
+      {
+        "id": "research",
+        "name": "MCP 网络研究",
+        "type": "MCP_TOOL",
+        "inputMappings": {
+          "purpose": {
+            "value": "为短文改编补充可靠背景"
+          },
+          "question": {
+            "path": "$.nodes.analyze.output.question"
+          }
+        },
+        "config": {
+          "operation": "research"
+        },
+        "timeoutSeconds": 120
+      },
+      {
+        "id": "write",
+        "name": "生成改编稿",
+        "type": "LLM",
+        "joinMode": "ANY",
+        "inputMappings": {
+          "sourceText": {
+            "path": "$.nodes.start.output.sourceText"
+          },
+          "analysis": {
+            "path": "$.nodes.analyze.output"
+          },
+          "researchEvidence": {
+            "path": "$.nodes.research.output",
+            "required": false
+          }
+        },
+        "config": {
+          "role": "DRAFT_WRITER",
+          "instruction": "根据输入原文、分析和可选研究资料完成一篇文学性改编，只输出正文。",
+          "responseMode": "TEXT"
+        }
+      },
+      {
+        "id": "end",
+        "name": "结束",
+        "type": "END",
+        "inputMappings": {
+          "finalDraft": {
+            "path": "$.nodes.write.output.text"
+          }
+        }
+      }
+    ],
+    "edges": [
+      {
+        "from": "start",
+        "to": "analyze"
+      },
+      {
+        "from": "analyze",
+        "to": "research",
+        "condition": {
+          "path": "$.nodes.analyze.output.researchNeeded",
+          "operator": "TRUTHY"
+        }
+      },
+      {
+        "from": "analyze",
+        "to": "write",
+        "condition": {
+          "path": "$.nodes.analyze.output.researchNeeded",
+          "operator": "FALSY"
+        }
+      },
+      {
+        "from": "research",
+        "to": "write"
+      },
+      {
+        "from": "write",
+        "to": "end"
+      }
+    ],
+    "outputMappings": {
+      "finalDraft": {
+        "path": "$.nodes.end.output.finalDraft"
+      }
+    }
+  },
+  "input": {
+    "sourceText": "雨停以后，老人仍坐在没有开灯的屋里，等一封不会再来的信。"
+  }
+}

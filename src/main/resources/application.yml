@@ -1,0 +1,158 @@
+server:
+  port: 8898
+
+spring:
+  application:
+    name: LangChain4j-Springboot
+  servlet:
+    multipart:
+      max-file-size: 10MB
+      max-request-size: 30MB
+  thymeleaf:
+    cache: false
+    prefix: classpath:/templates/
+    suffix: .html
+    mode: HTML
+    encoding: UTF-8
+  data:
+    redis:
+      host: ${REDIS_HOST:192.168.101.67}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:password}
+      database: ${REDIS_DATABASE:0}
+
+logging:
+  level:
+    root: INFO
+    com.openmanus: DEBUG
+    dev.langchain4j: DEBUG
+    org.springframework.web: INFO
+
+file:
+  upload:
+    dir: ${FILE_UPLOAD_DIR:./data/uploads}
+    max-size: 10485760
+    allowed-types: pdf,txt,md,html,doc,docx,ppt,pptx,xls,xlsx
+
+rag:
+  splitter:
+    max-segment-size: ${RAG_SPLITTER_MAX_SEGMENT_SIZE:800}
+    max-overlap-size: ${RAG_SPLITTER_MAX_OVERLAP_SIZE:120}
+    max-results: ${RAG_RETRIEVER_MAX_RESULTS:6}
+    min-score: ${RAG_RETRIEVER_MIN_SCORE:0.55}
+
+tool-security:
+  github:
+    enabled: ${GITHUB_TOOL_ENABLED:true}
+    token: ${GITHUB_TOKEN:}
+    timeout: ${GITHUB_TOOL_TIMEOUT:120s}
+    allowed-repositories: ${GITHUB_ALLOWED_REPOSITORIES:}
+    command:
+      - npx
+      - -y
+      - "@modelcontextprotocol/server-github@latest"
+  fetch:
+    enabled: ${FETCH_TOOL_ENABLED:true}
+    timeout: ${FETCH_TOOL_TIMEOUT:120s}
+    debug: ${FETCH_TOOL_DEBUG:true}
+    allowed-domains: ${FETCH_ALLOWED_DOMAINS:}
+    max-response-length: ${FETCH_MAX_RESPONSE_LENGTH:200000}
+    command:
+      - uvx
+      - mcp-server-fetch
+  filesystem:
+    enabled: ${FILESYSTEM_TOOL_ENABLED:true}
+    allowed-roots: ${FILESYSTEM_ALLOWED_ROOTS:./data}
+    allow-write: ${FILESYSTEM_ALLOW_WRITE:false}
+    allow-delete: ${FILESYSTEM_ALLOW_DELETE:false}
+    max-read-bytes: ${FILESYSTEM_MAX_READ_BYTES:1048576}
+    search-depth: ${FILESYSTEM_SEARCH_DEPTH:5}
+    max-search-results: ${FILESYSTEM_MAX_SEARCH_RESULTS:50}
+  docling:
+    enabled: ${RAG_DOCLING_ENABLED:true}
+    command: ${DOCLING_COMMAND:.venv-docling/Scripts/docling.exe}
+    timeout: ${DOCLING_TIMEOUT:5m}
+    fallback-to-native-parser: ${RAG_DOCLING_FALLBACK_TO_NATIVE:true}
+    supported-extensions: pdf,doc,docx,ppt,pptx,xls,xlsx,html,md
+    max-input-bytes: ${DOCLING_MAX_INPUT_BYTES:52428800}
+    ocr-enabled: ${DOCLING_OCR_ENABLED:true}
+    ocr-engine: ${DOCLING_OCR_ENGINE:}
+    ocr-lang: ${DOCLING_OCR_LANG:}
+
+langchain4j:
+  chat:
+    # supported providers: ollama | openai | zhipu | aihub
+    provider: ${LLM_PROVIDER:aihub}
+    aihub:
+      base-url: ${AIHUB_BASE_URL:https://api.deepseek.com}
+      name: ${AIHUB_NAME:AIHub}
+      api-key: ${AIHUB_API_KEY:}
+      model-name: ${AIHUB_MODEL_NAME:deepseek-v4-pro}
+      temperature: 0.0
+      timeout: 600s
+    ollama:
+      base-url: ${OLLAMA_BASE_URL:http://localhost:11434}
+      model-name: ${OLLAMA_CHAT_MODEL:qwen2.5:7b}
+      temperature: 0.0
+      timeout: 600s
+    openai:
+      api-key: ${OPENAI_API_KEY:}
+      model-name: ${OPENAI_MODEL_NAME:openai/gpt-5.4}
+      temperature: 0.0
+      max-tokens: 4096
+      base-url: ${OPENAI_BASE_URL:https://openrouter.ai/api/v1}
+      timeout: 600s
+#    zhipu:
+#      api-key: ${ZHIPU_API_KEY:}
+#      model-name: ${ZHIPU_MODEL_NAME:glm-4}
+#      temperature: 0.0
+#      max-tokens: 4096
+#      base-url: ${ZHIPU_BASE_URL:https://open.bigmodel.cn/api/paas/v4}
+#      timeout: 60s
+  embedding:
+    provider: ${EMBEDDING_PROVIDER:ollama}
+    ollama:
+      base-url: ${OLLAMA_BASE_URL:http://localhost:11434}
+      model-name: ${OLLAMA_EMBEDDING_MODEL:quentinz/bge-large-zh-v1.5:latest}
+      timeout: 600s
+
+rewrite-workflow:
+  enabled: ${REWRITE_WORKFLOW_ENABLED:true}
+  max-source-characters: ${REWRITE_MAX_SOURCE_CHARACTERS:20000}
+  selected-direction-count: ${REWRITE_SELECTED_DIRECTION_COUNT:2}
+  max-research-items: ${REWRITE_MAX_RESEARCH_ITEMS:4}
+  max-research-result-characters: ${REWRITE_MAX_RESEARCH_RESULT_CHARACTERS:8000}
+  max-rewrite-rounds: ${REWRITE_MAX_ROUNDS:2}
+  quality-threshold: ${REWRITE_QUALITY_THRESHOLD:80}
+  persistence:
+    key-prefix: "rewrite:workflow:"
+    ttl: ${REWRITE_WORKFLOW_TTL:30d}
+    required: ${REWRITE_PERSISTENCE_REQUIRED:true}
+  executor:
+    core-pool-size: ${REWRITE_EXECUTOR_CORE_SIZE:2}
+    max-pool-size: ${REWRITE_EXECUTOR_MAX_SIZE:4}
+    queue-capacity: ${REWRITE_EXECUTOR_QUEUE_CAPACITY:20}
+  research:
+    # 配置任意 stdio MCP 搜索服务后，工作流会优先搜索；否则使用现有 Fetch MCP 读取明确 URL。
+    search-enabled: ${REWRITE_MCP_SEARCH_ENABLED:false}
+    search-command: []
+    environment: {}
+    timeout: ${REWRITE_MCP_SEARCH_TIMEOUT:120s}
+    debug: ${REWRITE_MCP_SEARCH_DEBUG:false}
+  # 可将角色映射到不同的 ChatModel Bean；未配置时统一使用主模型。
+  model-by-role: {}
+  # 也可直接将角色映射到 langchain4j.chat 下的 provider 配置。
+  provider-by-role: {}
+
+dag-workflow:
+  enabled: ${DAG_WORKFLOW_ENABLED:true}
+  run-key-prefix: "dag:workflow:run:"
+  run-ttl: ${DAG_WORKFLOW_RUN_TTL:30d}
+  executor:
+    core-pool-size: ${DAG_WORKFLOW_EXECUTOR_CORE_SIZE:2}
+    max-pool-size: ${DAG_WORKFLOW_EXECUTOR_MAX_SIZE:4}
+    queue-capacity: ${DAG_WORKFLOW_EXECUTOR_QUEUE_CAPACITY:20}
+  node-executor:
+    core-pool-size: ${DAG_NODE_EXECUTOR_CORE_SIZE:4}
+    max-pool-size: ${DAG_NODE_EXECUTOR_MAX_SIZE:8}
+    queue-capacity: ${DAG_NODE_EXECUTOR_QUEUE_CAPACITY:50}
