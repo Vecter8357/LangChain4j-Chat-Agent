@@ -1,7 +1,7 @@
 :root {
-    --primary-color: #5468ff;
-    --primary-light: #6e7fff;
-    --primary-dark: #4050e0;
+    --primary-color: #030305;
+    --primary-light: #5f70f8;
+    --primary-dark: #3969f8;
     --secondary-color: #8ba3ff;
     --text-color: #333;
     --light-text: #f8f9fa;
@@ -234,26 +234,26 @@ body {
     min-width: 0;
 }
 
-.chat-header {
-    padding: 1.5rem;
-    background: linear-gradient(to right, var(--primary-dark), var(--primary-color));
-    color: var(--light-text);
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-}
+/*.chat-header {*/
+/*    padding: 1.5rem;*/
+/*    !*background: linear-gradient(to right, var(--primary-dark), var(--primary-color));*!*/
+/*    color: var(--light-text);*/
+/*    display: flex;*/
+/*    flex-direction: column;*/
+/*    align-items: center;*/
+/*}*/
 
-.chat-header h2 {
-    font-size: 1.8rem;
-    margin: 0 0 0.5rem 0;
-    font-weight: 600;
-}
+/*.chat-header h2 {*/
+/*    font-size: 1.8rem;*/
+/*    margin: 0 0 0.5rem 0;*/
+/*    font-weight: 600;*/
+/*}*/
 
-.chat-header p {
-    font-size: 1rem;
-    opacity: 0.9;
-    margin: 0;
-}
+/*.chat-header p {*/
+/*    font-size: 1rem;*/
+/*    opacity: 0.9;*/
+/*    margin: 0;*/
+/*}*/
 
 .chat-messages {
     flex: 1;
@@ -1304,13 +1304,13 @@ footer a:hover {
         margin-bottom: 0;
     }
     
-    .chat-header h2 {
-        font-size: 1.5rem;
-    }
+    /*.chat-header h2 {*/
+    /*    font-size: 1.5rem;*/
+    /*}*/
 
-    .chat-header p {
-        font-size: 0.9rem;
-    }
+    /*.chat-header p {*/
+    /*    font-size: 0.9rem;*/
+    /*}*/
 
     .examples-grid {
         grid-template-columns: 1fr;

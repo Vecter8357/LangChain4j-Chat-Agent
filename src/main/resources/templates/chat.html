@@ -51,10 +51,10 @@
                 </div>
             </aside>
         <div class="chat-container">
-            <div class="chat-header">
-                <h2 id="chat-title">智能问答</h2>
-                <p id="chat-subtitle">langchain4j智能体 - 自动选择最适合的工具，智能回答您的各类问题</p>
-            </div>
+<!--            <div class="chat-header">-->
+<!--                <h2 id="chat-title">智能问答</h2>-->
+<!--                <p id="chat-subtitle">langchain4j智能体 - 自动选择最适合的工具，智能回答您的各类问题</p>-->
+<!--            </div>-->
             <div class="chat-messages" id="chat-messages">
                 <div class="message ai">
                     <div class="message-content">
@@ -193,8 +193,8 @@
                     button.setAttribute('aria-selected', String(selected));
                 });
                 activeAgentName.textContent = config.name;
-                chatTitle.textContent = config.title;
-                chatSubtitle.textContent = config.subtitle;
+                // chatTitle.textContent = config.title;
+                // chatSubtitle.textContent = config.subtitle;
                 chatInput.placeholder = config.placeholder;
                 agentToolHelp.innerHTML = '';
                 const helpTitle = document.createElement('strong');
