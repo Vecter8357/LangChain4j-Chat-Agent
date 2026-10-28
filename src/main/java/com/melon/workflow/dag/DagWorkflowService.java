@@ -130,6 +130,13 @@ public class DagWorkflowService {
         return repository.findById(runId.trim());
     }
 
+    /**
+     * 返回最近运行记录，供设计器调试面板查看历史结果。
+     */
+    public List<DagWorkflowRun> findRecent(String workflowCode, int limit) {
+        return repository.findRecent(workflowCode, limit);
+    }
+
     private void execute(DagWorkflowRun run, CompiledDagWorkflow compiled) {
         run.setStatus(RunStatus.RUNNING);
         addEvent(run, null, "RUN_STARTED", "开始执行 DAG 工作流");

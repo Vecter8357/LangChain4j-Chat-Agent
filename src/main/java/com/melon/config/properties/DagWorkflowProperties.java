@@ -12,7 +12,10 @@ import java.time.Duration;
 public class DagWorkflowProperties {
     private boolean enabled = true;
     private String runKeyPrefix = "dag:workflow:run:";
+    private String runIndexKey = "dag:workflow:runs";
     private Duration runTtl = Duration.ofDays(30);
+    private String definitionKeyPrefix = "dag:workflow:definition:";
+    private String definitionIndexKey = "dag:workflow:definitions";
     private Executor executor = new Executor();
     private Executor nodeExecutor = new Executor(4, 8, 50);
 

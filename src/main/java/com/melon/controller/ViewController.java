@@ -28,4 +28,14 @@ public class ViewController {
     public String showAIChatPage() {
         return "chat";
     }
-} 
+
+    /**
+     * 显示 DAG 工作流可视化设计器。
+     *
+     * @return 工作流设计器视图名称
+     */
+    @GetMapping("/workflows")
+    public String showWorkflowDesigner() {
+        return "workflow";
+    }
+}

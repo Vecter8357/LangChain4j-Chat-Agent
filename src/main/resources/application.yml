@@ -147,7 +147,10 @@ rewrite-workflow:
 dag-workflow:
   enabled: ${DAG_WORKFLOW_ENABLED:true}
   run-key-prefix: "dag:workflow:run:"
+  run-index-key: "dag:workflow:runs"
   run-ttl: ${DAG_WORKFLOW_RUN_TTL:30d}
+  definition-key-prefix: "dag:workflow:definition:"
+  definition-index-key: "dag:workflow:definitions"
   executor:
     core-pool-size: ${DAG_WORKFLOW_EXECUTOR_CORE_SIZE:2}
     max-pool-size: ${DAG_WORKFLOW_EXECUTOR_MAX_SIZE:4}

@@ -2,6 +2,8 @@
 
 这是一个基于 Spring Boot 3 和 LangChain4j 的 Web 智能助手，支持流式聊天、模型配置切换、文档问答，以及 GitHub、网页抓取和受限文件系统工具。
 
+系统的非商用目标架构、数据流、用例以及 Capability/Tools 关系见 [非商用 Agent 平台详细架构设计](docs/architecture/non-commercial-agent-platform-architecture.md)。
+
 ## 运行环境
 
 - JDK 21 或更高版本
@@ -198,7 +200,7 @@ rewrite-workflow:
 
 项目包含一套初步通用 DAG 运行内核，支持：
 
-- `START`、`LLM`、`MCP_TOOL`、`CONDITION`、`END` 节点；
+- `START`、`LLM`、`AGENT`、`MCP_TOOL`、`CONDITION`、`END` 节点；
 - 使用 `$.nodes.<nodeId>.output...` 引用前序节点输出；
 - 在边上配置 `EQ`、`NE`、数值比较、`CONTAINS`、`EXISTS`、`TRUTHY`、`FALSY` 条件；
 - `ANY` 和 `ALL` 两种入边合并语义；
@@ -206,6 +208,8 @@ rewrite-workflow:
 - 节点超时、有限重试、运行事件以及 Redis 状态保存；
 - LLM 节点通过 `role` 复用 `rewrite-workflow.model-by-role/provider-by-role` 模型路由；
 - MCP 节点当前支持 `operation: research`，复用现有 MCP 搜索/网页研究能力。
+
+启动应用后访问 [http://localhost:8898/workflows](http://localhost:8898/workflows) 可以使用第一版可视化设计器。当前支持节点拖放、SVG 连线、节点与条件边配置、上游变量选择、工作流草稿保存、JSON 导入导出、结构化校验、运行历史，以及在画布上查看节点执行状态、输入、输出和错误。
 
 先校验示例定义：
 
@@ -232,7 +236,7 @@ $run = Invoke-RestMethod `
 Invoke-RestMethod "http://localhost:8898/api/dag-workflows/runs/$($run.runId)"
 ```
 
-这是执行内核的第一阶段：工作流定义随启动请求提交，运行状态以 Redis 单 Key 保存，调度使用本地线程池。工作流定义版本库、持久消息队列、人工节点、动态 `FOREACH/JOIN`、MCP Server 注册中心和可视化画布尚未包含在该 MVP 中。
+这是执行内核和画布的第一阶段：工作流定义及画布位置可以保存到 Redis，运行状态仍以 Redis 单 Key 保存，调度使用本地线程池。完整版本发布与回滚、持久消息队列、人工节点、动态 `FOREACH/JOIN`、暂停恢复、单节点执行和并行分支调度尚未包含在该 MVP 中。
 
 ## Agent 平台内核
 

@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Workflow Designer</title>
+    <link rel="stylesheet" href="/css/workflow.css">
+</head>
+<body>
+<div class="designer-shell">
+    <header class="designer-header">
+        <div class="brand">
+            <a class="back-link" href="/chat" aria-label="返回对话">←</a>
+            <div>
+                <strong>Workflow Designer</strong>
+                <span>轻量 DAG 编排与调试</span>
+            </div>
+        </div>
+        <div class="definition-switcher">
+            <select id="definition-select" aria-label="已保存工作流">
+                <option value="">当前未保存草稿</option>
+            </select>
+            <button id="new-button" class="button ghost" type="button">新建</button>
+        </div>
+        <div class="toolbar-actions">
+            <button id="import-button" class="button ghost" type="button">导入</button>
+            <button id="export-button" class="button ghost" type="button">导出</button>
+            <button id="validate-button" class="button secondary" type="button">校验</button>
+            <button id="save-button" class="button secondary" type="button">保存</button>
+            <button id="run-button" class="button primary" type="button">运行调试</button>
+            <input id="import-file" type="file" accept="application/json,.json" hidden>
+        </div>
+    </header>
+
+    <main class="designer-main">
+        <aside class="palette-panel panel">
+            <div class="panel-heading">
+                <span>节点</span>
+                <small>点击加入画布</small>
+            </div>
+            <div id="node-palette" class="node-palette"></div>
+            <div class="palette-help">
+                <strong>连线方式</strong>
+                <p>先点击节点右侧输出点，再点击目标节点左侧输入点。</p>
+            </div>
+        </aside>
+
+        <section class="canvas-section">
+            <div class="canvas-toolbar">
+                <div>
+                    <strong id="workflow-title">未命名工作流</strong>
+                    <span id="dirty-indicator">未保存</span>
+                </div>
+                <div class="canvas-toolbar-actions">
+                    <button id="workflow-settings-button" type="button">工作流设置</button>
+                    <button id="fit-button" type="button">定位节点</button>
+                    <button id="delete-button" class="danger-text" type="button" disabled>删除所选</button>
+                </div>
+            </div>
+            <div id="canvas-viewport" class="canvas-viewport">
+                <div id="workflow-canvas" class="workflow-canvas" tabindex="0">
+                    <svg id="edge-layer" class="edge-layer" width="2400" height="1400" aria-label="工作流连线">
+                        <defs>
+                            <marker id="edge-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+                                <path d="M0,0 L8,4 L0,8 Z" fill="currentColor"></path>
+                            </marker>
+                        </defs>
+                    </svg>
+                    <div id="node-layer" class="node-layer"></div>
+                </div>
+            </div>
+        </section>
+
+        <aside class="inspector-panel panel">
+            <div class="panel-heading">
+                <span>配置</span>
+                <small id="inspector-caption">工作流</small>
+            </div>
+            <div id="inspector-content" class="inspector-content"></div>
+        </aside>
+    </main>
+
+    <section class="debug-panel">
+        <div class="debug-header">
+            <div>
+                <strong>调试控制台</strong>
+                <span id="run-status" class="run-status idle">IDLE</span>
+                <span id="run-id"></span>
+            </div>
+            <div>
+                <button id="refresh-history-button" type="button">刷新历史</button>
+                <select id="run-history" aria-label="历史运行">
+                    <option value="">最近运行</option>
+                </select>
+                <button id="toggle-debug-button" type="button">收起</button>
+            </div>
+        </div>
+        <div id="debug-body" class="debug-body">
+            <div class="debug-input-column">
+                <label for="run-input">测试输入 JSON</label>
+                <textarea id="run-input" spellcheck="false">{
+  "sourceText": "请输入测试内容"
+}</textarea>
+                <div id="validation-result" class="validation-result neutral">尚未校验</div>
+            </div>
+            <div class="debug-events-column">
+                <div class="debug-column-title">运行事件</div>
+                <div id="run-events" class="run-events empty">暂无运行事件</div>
+            </div>
+            <div class="debug-details-column">
+                <div class="debug-column-title">节点详情</div>
+                <pre id="node-run-details">选择运行后的节点查看实际输入、输出和错误。</pre>
+            </div>
+        </div>
+    </section>
+</div>
+
+<div id="toast" class="toast" role="status" aria-live="polite"></div>
+<script src="/js/workflow.js"></script>
+</body>
+</html>

@@ -1,0 +1,15 @@
+{
+  "definition": {
+    "id": "web-research-agent",
+    "name": "网页研究 Agent",
+    "systemPrompt": "你负责读取可信网页资料并基于证据回答问题。必须区分来源事实和自己的推断。",
+    "capabilityIds": [
+      "mcp.web-fetch.fetch"
+    ],
+    "maxSteps": 6
+  },
+  "objective": "读取指定网页，概括其中与 LangChain4j MCP 有关的信息。",
+  "input": {
+    "url": "https://docs.langchain4j.dev/tutorials/mcp"
+  }
+}
