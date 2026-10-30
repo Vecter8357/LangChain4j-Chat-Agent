@@ -53,6 +53,12 @@
                     </select>
                     <small id="rewrite-style-description">连续的文学段落，不使用档案、公文或报告格式。</small>
                 </div>
+                <div class="rewrite-style-control" id="knowledge-selector-control">
+                    <label for="knowledge-bases">本轮知识库（可多选）</label>
+                    <select id="knowledge-bases" multiple size="3" aria-label="本轮知识库"></select>
+                    <small id="knowledge-selection-hint">未选择时使用普通智能问答。永久文档不会随对话删除。</small>
+                    <a href="/knowledge">管理知识库 ↗</a>
+                </div>
                 <div class="agent-tool-help" id="agent-tool-help">
                     <strong>智能问答</strong>
                     <span>输入问题，系统会自动判断并调用合适的工具。</span>
@@ -145,6 +151,25 @@
             const rewriteStyleControl = document.getElementById('rewrite-style-control');
             const rewriteOutputStyle = document.getElementById('rewrite-output-style');
             const rewriteStyleDescription = document.getElementById('rewrite-style-description');
+            const knowledgeBases = document.getElementById('knowledge-bases');
+            async function loadKnowledgeBases() {
+                try {
+                    const response = await fetch('/api/knowledge/bases');
+                    if (!response.ok) throw new Error();
+                    const selected = new Set(Array.from(knowledgeBases.selectedOptions).map(option => option.value));
+                    const bases = await response.json();
+                    knowledgeBases.replaceChildren();
+                    bases.filter(base => base.status === 'ACTIVE').forEach(base => {
+                        const option = new Option(base.name, base.id);
+                        option.selected = selected.has(base.id);
+                        knowledgeBases.appendChild(option);
+                    });
+                } catch (error) {
+                    document.getElementById('knowledge-selection-hint').textContent = '知识库暂不可用，可继续普通对话。';
+                }
+            }
+            loadKnowledgeBases();
+            window.addEventListener('focus', loadKnowledgeBases);
             
             let uploadedFiles = [];
             const MAX_FILES = 3;
@@ -213,6 +238,7 @@
                 uploadButton.classList.toggle('agent-hidden', toolName === 'rewrite');
                 fileTagsContainer.classList.toggle('agent-hidden', toolName === 'rewrite');
                 rewriteStyleControl.classList.toggle('agent-hidden', toolName !== 'rewrite');
+                document.getElementById('knowledge-selector-control').classList.toggle('agent-hidden', toolName === 'rewrite');
                 chatInput.classList.toggle('rewrite-input', toolName === 'rewrite');
                 chatInput.focus();
             }
@@ -415,7 +441,8 @@
             
             // 清空所有文件
             function clearAllFiles() {
-                const promises = uploadedFiles.map(file => 
+                // 此处只处理临时附件；永久文档由 /api/knowledge 管理，不进入 uploadedFiles。
+                const promises = uploadedFiles.filter(file => !file.purpose || file.purpose === 'TEMPORARY_ATTACHMENT').map(file =>
                     fetch(`/api/ai/upload/${file.id}`, {
                         method: 'DELETE'
                     })
@@ -495,7 +522,10 @@
                         const lastAiMessage = aiMessages[aiMessages.length - 1];
                         const messageContent = lastAiMessage.querySelector('.message-content');
                         if (messageContent) {
-                            messageContent.innerHTML += '<div class="cancel-notice">[回复已中断]</div>';
+                            const cancelNotice = document.createElement('div');
+                            cancelNotice.className = 'cancel-notice';
+                            cancelNotice.textContent = '[回复已中断]';
+                            messageContent.appendChild(cancelNotice);
                         }
                     }
                     return;
@@ -531,11 +561,12 @@
                     // 构建包含上传文件ID的请求
                     const requestBody = {
                         input: input,
-                        fileIds: uploadedFiles.map(file => file.id)
+                        fileIds: uploadedFiles.map(file => file.id),
+                        knowledgeBaseIds: Array.from(knowledgeBases.selectedOptions).map(option => option.value)
                     };
                     
                     // 发送请求，带上signal
-                    const response = await fetch('/api/ai/stream', {
+                    const response = await fetch(requestBody.knowledgeBaseIds.length ? '/api/knowledge/chat' : '/api/ai/stream', {
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/json'
@@ -571,6 +602,20 @@
                     chatMessages.appendChild(aiMessageDiv);
                     
                     let fullText = '';
+                    let sseBuffer = '';
+
+                    const consumeSseBlock = block => {
+                        const data = block
+                            .split('\n')
+                            .filter(line => line.startsWith('data:'))
+                            .map(line => line.substring(5).replace(/^ /, ''))
+                            .join('\n');
+                        if (data && data !== '[DONE]') {
+                            fullText += data;
+                            renderAssistantContent(messageContent, fullText, toolBadge);
+                            scrollToBottom();
+                        }
+                    };
                     
                     // 处理流式响应
                     while (true) {
@@ -580,19 +625,17 @@
                             break;
                         }
                         
-                        const text = decoder.decode(value);
-                        const lines = text.split('\n');
-                        
-                        for (const line of lines) {
-                            if (line.trim() && line.startsWith('data:')) {
-                                const content = line.substring(5).trim();
-                                if (content !== '[DONE]') {
-                                    fullText += content;
-                                    messageContent.innerHTML = fullText;
-                                    scrollToBottom();
-                                }
-                            }
+                        sseBuffer += decoder.decode(value, { stream: true }).replace(/\r\n/g, '\n');
+                        let boundary;
+                        while ((boundary = sseBuffer.indexOf('\n\n')) >= 0) {
+                            consumeSseBlock(sseBuffer.substring(0, boundary));
+                            sseBuffer = sseBuffer.substring(boundary + 2);
                         }
+                    }
+
+                    sseBuffer += decoder.decode().replace(/\r\n/g, '\n');
+                    if (sseBuffer.trim()) {
+                        consumeSseBlock(sseBuffer);
                     }
                     
                     // 根据响应内容中的关键词猜测使用的工具类型
@@ -608,6 +651,8 @@
                                fullText.toLowerCase().includes('目录') || 
                                fullText.toLowerCase().includes('文件夹')) {
                         toolBadge.textContent = '文件系统';
+                    } else if (requestBody.knowledgeBaseIds.length) {
+                        toolBadge.textContent = '知识库';
                     } else if (uploadedFiles.length > 0) {
                         toolBadge.textContent = '文档RAG';
                     }
@@ -1021,6 +1066,224 @@
                     }
                 });
             }
+
+            /**
+             * 将模型文本安全渲染为基础 Markdown，并识别图片与视频下载链接。
+             * 模型输出中的 HTML 始终按普通文本处理，避免脚本注入。
+             */
+            function renderAssistantContent(messageContent, markdown, toolBadge) {
+                const content = document.createElement('div');
+                content.className = 'assistant-content';
+                renderMarkdownBlocks(content, markdown || '');
+                messageContent.replaceChildren(toolBadge, content);
+            }
+
+            function renderMarkdownBlocks(container, markdown) {
+                const lines = markdown.replace(/\r\n?/g, '\n').split('\n');
+                let index = 0;
+
+                while (index < lines.length) {
+                    const line = lines[index];
+                    if (!line.trim()) {
+                        index++;
+                        continue;
+                    }
+
+                    const fence = line.match(/^\s*```([^`]*)$/);
+                    if (fence) {
+                        const codeLines = [];
+                        index++;
+                        while (index < lines.length && !/^\s*```\s*$/.test(lines[index])) {
+                            codeLines.push(lines[index++]);
+                        }
+                        if (index < lines.length) index++;
+                        const pre = document.createElement('pre');
+                        const code = document.createElement('code');
+                        const language = fence[1].trim().replace(/[^a-zA-Z0-9_-]/g, '');
+                        if (language) code.className = `language-${language}`;
+                        code.textContent = codeLines.join('\n');
+                        pre.appendChild(code);
+                        container.appendChild(pre);
+                        continue;
+                    }
+
+                    const heading = line.match(/^(#{1,6})\s+(.+)$/);
+                    if (heading) {
+                        const element = document.createElement(`h${heading[1].length}`);
+                        appendInlineMarkdown(element, heading[2]);
+                        container.appendChild(element);
+                        index++;
+                        continue;
+                    }
+
+                    if (/^\s*([-*_])(?:\s*\1){2,}\s*$/.test(line)) {
+                        container.appendChild(document.createElement('hr'));
+                        index++;
+                        continue;
+                    }
+
+                    const listMatch = line.match(/^\s*(?:([-+*])|(\d+)[.)])\s+(.+)$/);
+                    if (listMatch) {
+                        const ordered = Boolean(listMatch[2]);
+                        const list = document.createElement(ordered ? 'ol' : 'ul');
+                        while (index < lines.length) {
+                            const item = lines[index].match(/^\s*(?:([-+*])|(\d+)[.)])\s+(.+)$/);
+                            if (!item || Boolean(item[2]) !== ordered) break;
+                            const listItem = document.createElement('li');
+                            appendInlineMarkdown(listItem, item[3]);
+                            list.appendChild(listItem);
+                            index++;
+                        }
+                        container.appendChild(list);
+                        continue;
+                    }
+
+                    if (/^\s*>\s?/.test(line)) {
+                        const quote = document.createElement('blockquote');
+                        const quoteLines = [];
+                        while (index < lines.length && /^\s*>\s?/.test(lines[index])) {
+                            quoteLines.push(lines[index++].replace(/^\s*>\s?/, ''));
+                        }
+                        quoteLines.forEach((quoteLine, quoteIndex) => {
+                            if (quoteIndex > 0) quote.appendChild(document.createElement('br'));
+                            appendInlineMarkdown(quote, quoteLine);
+                        });
+                        container.appendChild(quote);
+                        continue;
+                    }
+
+                    const paragraph = document.createElement('p');
+                    let paragraphLine = 0;
+                    while (index < lines.length && lines[index].trim() && !isMarkdownBlockStart(lines[index], paragraphLine > 0)) {
+                        if (paragraphLine++ > 0) paragraph.appendChild(document.createElement('br'));
+                        appendInlineMarkdown(paragraph, lines[index++]);
+                    }
+                    container.appendChild(paragraph);
+                }
+            }
+
+            function isMarkdownBlockStart(line, insideParagraph) {
+                if (!insideParagraph) return false;
+                return /^\s*```/.test(line)
+                    || /^(#{1,6})\s+/.test(line)
+                    || /^\s*(?:[-+*]|\d+[.)])\s+/.test(line)
+                    || /^\s*>\s?/.test(line)
+                    || /^\s*([-*_])(?:\s*\1){2,}\s*$/.test(line);
+            }
+
+            function appendInlineMarkdown(parent, text) {
+                const tokenPattern = /!\[([^\]]*)\]\(([^)\s]+)(?:\s+"[^"]*")?\)|\[([^\]]+)\]\(([^)\s]+)(?:\s+"[^"]*")?\)|\*\*([^*]+)\*\*|`([^`]+)`/g;
+                let cursor = 0;
+                let match;
+                while ((match = tokenPattern.exec(text)) !== null) {
+                    appendPlainText(parent, text.substring(cursor, match.index));
+                    if (match[1] !== undefined) {
+                        appendImage(parent, match[2], match[1] || '生成图片');
+                    } else if (match[3] !== undefined) {
+                        appendLink(parent, match[4], match[3]);
+                    } else if (match[5] !== undefined) {
+                        const strong = document.createElement('strong');
+                        strong.textContent = match[5];
+                        parent.appendChild(strong);
+                    } else {
+                        const code = document.createElement('code');
+                        code.textContent = match[6];
+                        parent.appendChild(code);
+                    }
+                    cursor = tokenPattern.lastIndex;
+                }
+                appendPlainText(parent, text.substring(cursor));
+            }
+
+            function appendPlainText(parent, text) {
+                const urlPattern = /https?:\/\/[^\s<>]+/g;
+                let cursor = 0;
+                let match;
+                while ((match = urlPattern.exec(text)) !== null) {
+                    parent.appendChild(document.createTextNode(text.substring(cursor, match.index)));
+                    let url = match[0];
+                    let suffix = '';
+                    while (/[.,;!，。；！：]$/.test(url)) {
+                        suffix = url.slice(-1) + suffix;
+                        url = url.slice(0, -1);
+                    }
+                    if (isImageUrl(url)) {
+                        appendImage(parent, url, '生成图片');
+                    } else {
+                        appendLink(parent, url, isVideoUrl(url) ? '下载视频' : url);
+                    }
+                    if (suffix) parent.appendChild(document.createTextNode(suffix));
+                    cursor = match.index + match[0].length;
+                }
+                parent.appendChild(document.createTextNode(text.substring(cursor)));
+            }
+
+            function appendImage(parent, rawUrl, alt) {
+                const url = safeMediaUrl(rawUrl);
+                if (!url) {
+                    parent.appendChild(document.createTextNode(`![${alt}](${rawUrl})`));
+                    return;
+                }
+                const link = document.createElement('a');
+                link.className = 'chat-image-card';
+                link.href = url;
+                link.target = '_blank';
+                link.rel = 'noopener noreferrer';
+                link.title = '打开原图';
+                const image = document.createElement('img');
+                image.src = url;
+                image.alt = alt;
+                image.loading = 'lazy';
+                image.addEventListener('error', () => link.classList.add('media-load-failed'));
+                const caption = document.createElement('span');
+                caption.textContent = alt;
+                link.append(image, caption);
+                parent.appendChild(link);
+            }
+
+            function appendLink(parent, rawUrl, label) {
+                const url = safeMediaUrl(rawUrl);
+                if (!url) {
+                    parent.appendChild(document.createTextNode(`[${label}](${rawUrl})`));
+                    return;
+                }
+                const video = isVideoUrl(rawUrl) || /视频|download\s*video/i.test(label) || /[?&]download=true(?:&|$)/i.test(rawUrl);
+                const link = document.createElement('a');
+                link.href = url;
+                link.target = '_blank';
+                link.rel = 'noopener noreferrer';
+                if (video) {
+                    link.className = 'media-download-card';
+                    link.setAttribute('download', '');
+                    const icon = document.createElement('span');
+                    icon.className = 'media-download-icon';
+                    icon.setAttribute('aria-hidden', 'true');
+                    icon.textContent = '↓';
+                    const copy = document.createElement('span');
+                    copy.textContent = label || '下载视频';
+                    link.append(icon, copy);
+                } else {
+                    link.textContent = label;
+                }
+                parent.appendChild(link);
+            }
+
+            function safeMediaUrl(rawUrl) {
+                try {
+                    const url = new URL(rawUrl, window.location.href);
+                    return url.protocol === 'http:' || url.protocol === 'https:' ? url.href : null;
+                } catch (error) {
+                    return null;
+                }
+            }
+
+            function isImageUrl(url) {
+                return /\.(?:png|jpe?g|gif|webp|avif)(?:[?#].*)?$/i.test(url);
+            }
+
+            function isVideoUrl(url) {
+                return /\.(?:mp4|webm|mov|m4v|avi|mkv)(?:[?#].*)?$/i.test(url);
+            }
             
             // 添加消息到聊天区域
             function addMessage(type, content) {
@@ -1029,13 +1292,14 @@
                 
                 const messageContent = document.createElement('div');
                 messageContent.className = 'message-content' + (type === 'ai' ? ' markdown' : '');
-                messageContent.textContent = content;
                 
                 if (type === 'ai') {
                     const toolBadge = document.createElement('div');
                     toolBadge.className = 'tool-badge';
                     toolBadge.textContent = 'AI';
-                    messageContent.appendChild(toolBadge);
+                    renderAssistantContent(messageContent, content, toolBadge);
+                } else {
+                    messageContent.textContent = content;
                 }
                 
                 messageDiv.appendChild(messageContent);

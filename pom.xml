@@ -17,10 +17,21 @@
     <properties>
         <java.version>21</java.version>
         <langchain4j.version>1.22.0</langchain4j.version>
+        <qdrant-client.version>1.20.0</qdrant-client.version>
+        <grpc.version>1.84.2</grpc.version>
+        <dynamic-datasource.version>4.5.0</dynamic-datasource.version>
     </properties>
 
     <dependencyManagement>
         <dependencies>
+            <!-- Qdrant 客户端和 LangChain4j 的 gRPC 模块必须使用同一版本。 -->
+            <dependency>
+                <groupId>io.grpc</groupId>
+                <artifactId>grpc-bom</artifactId>
+                <version>${grpc.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
             <dependency>
                 <groupId>dev.langchain4j</groupId>
                 <artifactId>langchain4j-bom</artifactId>
@@ -41,6 +52,21 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-thymeleaf</artifactId>
         </dependency>
+        <!-- MySQL、HikariCP 连接池和 application.yml 中的动态数据源配置。 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-jdbc</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.mysql</groupId>
+            <artifactId>mysql-connector-j</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.baomidou</groupId>
+            <artifactId>dynamic-datasource-spring-boot3-starter</artifactId>
+            <version>${dynamic-datasource.version}</version>
+        </dependency>
 
         <!-- LangChain4j -->
         <dependency>
@@ -58,6 +84,16 @@
         <dependency>
             <groupId>dev.langchain4j</groupId>
             <artifactId>langchain4j-open-ai</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>dev.langchain4j</groupId>
+            <artifactId>langchain4j-qdrant</artifactId>
+        </dependency>
+        <!-- 对齐 Qdrant 1.20 服务端，覆盖 LangChain4j 默认带入的旧版客户端。 -->
+        <dependency>
+            <groupId>io.qdrant</groupId>
+            <artifactId>client</artifactId>
+            <version>${qdrant-client.version}</version>
         </dependency>
         
         <!-- Lombok -->
@@ -87,6 +123,19 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-data-redis</artifactId>
+        </dependency>
+
+        <!-- MinIO / S3 兼容对象存储 -->
+        <dependency>
+            <groupId>io.minio</groupId>
+            <artifactId>minio</artifactId>
+            <version>8.6.0</version>
+        </dependency>
+        <!-- MinIO 8.6.0 的 Maven 元数据需要显式选择 OkHttp JVM 实现。 -->
+        <dependency>
+            <groupId>com.squareup.okhttp3</groupId>
+            <artifactId>okhttp-jvm</artifactId>
+            <version>5.1.0</version>
         </dependency>
     </dependencies>
     

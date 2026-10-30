@@ -19,6 +19,7 @@ import java.util.Map;
 public class BuiltInCapabilityRegistrar {
 
     public static final String RAG_ANSWER = "knowledge.rag.answer";
+    public static final String KNOWLEDGE_SEARCH = "knowledge.search";
 
     private final CapabilityRegistry registry;
     private final ToolSecurityProperties securityProperties;
@@ -57,6 +58,14 @@ public class BuiltInCapabilityRegistrar {
                 .build();
         registry.register(descriptor(RAG_ANSWER, CapabilityType.KNOWLEDGE,
                 "文档知识库问答", "knowledge", "answer", rag));
+        ToolSpecification search = ToolSpecification.builder().name("knowledge__search")
+                .description("检索已选择的永久知识库，返回混合检索、重排和带版本的引用来源")
+                .parameters(JsonObjectSchema.builder().addStringProperty("question")
+                        .addProperty("knowledgeBaseIds", JsonArraySchema.builder().items(new JsonStringSchema()).build())
+                        .addProperty("fileIds", JsonArraySchema.builder().items(new JsonStringSchema()).build())
+                        .required("question", "knowledgeBaseIds").build()).build();
+        registry.register(descriptor(KNOWLEDGE_SEARCH, CapabilityType.KNOWLEDGE,
+                "永久知识库检索", "knowledge", "search", search));
     }
 
     /**

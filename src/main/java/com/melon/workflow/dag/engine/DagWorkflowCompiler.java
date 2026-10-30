@@ -136,11 +136,18 @@ public class DagWorkflowCompiler {
                 }
             }
         }
-        if (node.getType() == NodeType.MCP_TOOL && node.getConfig() != null) {
-            String capabilityId = node.getConfig().path("capabilityId").asText();
-            String operation = node.getConfig().path("operation").asText("research");
+        if (node.getType() == NodeType.MCP_TOOL) {
+            String capabilityId = node.getConfig() == null
+                    ? null : node.getConfig().path("capabilityId").asText();
+            String operation = node.getConfig() == null
+                    ? "research" : node.getConfig().path("operation").asText("research");
             if (!StringUtils.hasText(capabilityId) && !"research".equalsIgnoreCase(operation)) {
                 errors.add("MCP_TOOL 必须配置 config.capabilityId，或使用兼容 research 操作: " + operation);
+            }
+            if (!StringUtils.hasText(capabilityId) && "research".equalsIgnoreCase(operation)
+                    && !hasResearchQuestion(node)) {
+                errors.add("MCP research 节点 " + node.getId()
+                        + " 必须通过 inputMappings.question 或 config.question 提供研究问题");
             }
         }
         if (node.getType() == NodeType.AGENT
@@ -148,6 +155,22 @@ public class DagWorkflowCompiler {
                 || !StringUtils.hasText(node.getConfig().path("systemPrompt").asText()))) {
             errors.add("AGENT 节点 " + node.getId() + " 必须配置 config.systemPrompt");
         }
+    }
+
+    /**
+     * 判断兼容 research 节点是否配置了可解析的研究问题。
+     */
+    private boolean hasResearchQuestion(Node node) {
+        if (node.getConfig() != null && StringUtils.hasText(node.getConfig().path("question").asText())) {
+            return true;
+        }
+        if (node.getInputMappings() == null) {
+            return false;
+        }
+        return List.of("question", "query", "objective", "prompt", "topic", "sourceText").stream()
+                .map(node.getInputMappings()::get)
+                .anyMatch(binding -> binding != null
+                        && (StringUtils.hasText(binding.getPath()) || binding.getValue() != null));
     }
 
     private void validateBindings(Map<String, Node> nodesById,

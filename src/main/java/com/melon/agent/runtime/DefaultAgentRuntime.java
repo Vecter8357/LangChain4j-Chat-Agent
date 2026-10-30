@@ -153,7 +153,7 @@ public class DefaultAgentRuntime implements AgentRuntime {
                         run.setFailureReason("等待批准能力调用: " + capability.id());
                         return run;
                     }
-                    invokeCapability(run, messages, definition, capability, toolRequest);
+                    invokeCapability(run, messages, definition, capability, toolRequest, request.getInput());
                 }
             }
             run.setStatus(AgentRun.Status.FAILED);
@@ -181,11 +181,21 @@ public class DefaultAgentRuntime implements AgentRuntime {
                                   List<ChatMessage> messages,
                                   AgentDefinition definition,
                                   CapabilityDescriptor capability,
-                                  ToolExecutionRequest toolRequest) {
+                                  ToolExecutionRequest toolRequest, JsonNode scope) {
         AgentStep step = capabilityStep(run, capability, toolRequest);
         Instant startedAt = Instant.now();
         try {
             JsonNode arguments = parseArguments(toolRequest.arguments());
+            if ("knowledge".equals(capability.providerId())) {
+                if ("search".equals(capability.providerOperation())) {
+                    requireScope(arguments, scope, "knowledgeBaseIds", "knowledgeBaseIds", true);
+                    if (scope != null && scope.has("knowledgeFileIds")) {
+                        requireScope(arguments, scope, "fileIds", "knowledgeFileIds", true);
+                    }
+                } else {
+                    requireScope(arguments, scope, "fileIds", "fileIds", true);
+                }
+            }
             step.setArguments(arguments);
             schemaValidator.validate(arguments, capability.inputSchema(),
                     "能力 " + capability.id() + " 输入");
@@ -206,6 +216,25 @@ public class DefaultAgentRuntime implements AgentRuntime {
                     "能力调用失败: " + step.getErrorMessage()));
         }
         run.getSteps().add(step);
+    }
+
+    /** 知识范围必须来自 Agent 输入，模型只能缩小范围，不能扩大或凭空指定文件。 */
+    private void requireScope(JsonNode arguments, JsonNode scope, String field, String scopeField, boolean required) {
+        JsonNode allowed = scope == null ? null : scope.path(scopeField);
+        if (allowed == null || !allowed.isArray() || allowed.isEmpty()) {
+            throw new IllegalArgumentException("Agent 输入未提供知识范围: " + scopeField);
+        }
+        JsonNode selected = arguments.path(field);
+        if (selected.isMissingNode() && arguments instanceof ObjectNode object) {
+            object.set(field, allowed.deepCopy());
+            selected = object.path(field);
+        }
+        if (!selected.isArray() || (required && selected.isEmpty())) throw new IllegalArgumentException(field + " 必须为非空数组");
+        for (JsonNode value : selected) {
+            boolean present = false;
+            for (JsonNode item : allowed) if (item.equals(value)) present = true;
+            if (!present) throw new IllegalArgumentException("知识检索范围超出本次 Agent 输入");
+        }
     }
 
     /**

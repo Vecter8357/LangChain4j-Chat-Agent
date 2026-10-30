@@ -32,12 +32,14 @@ public class DoclingDocumentProcessor {
         this.properties = toolSecurityProperties.getDocling();
     }
 
-    public Optional<Document> convertToDocument(UploadFile file, String fileExtension) {
+    /**
+     * 将已经从对象存储物化到本地的临时文件交给 Docling 转换。
+     */
+    public Optional<Document> convertToDocument(UploadFile file, Path sourcePath, String fileExtension) {
         if (!properties.isEnabled() || !isSupported(fileExtension)) {
             return Optional.empty();
         }
 
-        Path sourcePath = Paths.get(file.getFilePath());
         if (!Files.exists(sourcePath)) {
             log.warn("Docling skipped because source file does not exist: {}", sourcePath);
             return Optional.empty();

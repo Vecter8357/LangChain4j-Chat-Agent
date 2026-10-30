@@ -8,26 +8,25 @@
 
 - JDK 21 或更高版本
 - Maven 3.8 或更高版本
-- Ollama：使用本地聊天模型或文档问答时需要
+- Ollama：仅在显式选择本地聊天模型时需要；默认向量生成已改用硅基流动
 - Redis：上传文档并进行问答时需要
+- MinIO：上传文件和文档问答时需要，文件内容不再保存到应用本地目录
 - Node.js：使用 GitHub 工具时需要，项目会通过 `npx` 启动 MCP 服务
 - Python `uvx`：使用网页抓取工具时需要
 
-仅使用 OpenAI、智谱或其他 OpenAI 兼容接口进行普通聊天时，不需要启动本地 Ollama；但上传文件仍需要 Ollama 嵌入模型和 Redis。
+默认 Embedding 使用硅基流动 `BAAI/bge-m3`，重排使用 `BAAI/bge-reranker-v2-m3`，两者默认读取 `GJLD_EMBEDDING` 环境变量。文档索引不再依赖本地 Ollama。
 
 ## 快速启动
 
-### 1. 使用本地 Ollama
+### 1. 准备向量模型与启动项目
 
-先启动 Ollama 并准备模型：
+设置硅基流动密钥（不要提交实际密钥），并确保 MySQL、Redis、MinIO 与 Qdrant 已启动：
 
 ```powershell
-ollama pull qwen2.5:7b
-ollama pull quentinz/bge-large-zh-v1.5:latest
-ollama serve
+$env:GJLD_EMBEDDING = "你的硅基流动API Key"
 ```
 
-默认配置已经选择 `ollama`，直接启动项目：
+默认 Embedding 提供方为 `siliconflow`。聊天模型仍由 `LLM_PROVIDER` 独立选择，启动项目：
 
 ```powershell
 mvn spring-boot:run
@@ -76,6 +75,17 @@ mvn spring-boot:run
 - GitHub 查询：先设置 `GITHUB_TOKEN`，再询问仓库、提交或 Issue 等信息。
 - 网页分析：安装 `uvx` 后，在问题中包含要分析的网址。
 - 文件操作：默认只允许读取项目下的 `data` 目录，写入和删除默认关闭。
+
+上传文件使用 MinIO 对象存储，默认配置可通过环境变量覆盖：
+
+```powershell
+$env:MINIO_ENDPOINT = "http://192.168.101.67:9000"
+$env:MINIO_ACCESS_KEY = "minioadmin"
+$env:MINIO_SECRET_KEY = "minioadmin"
+$env:MINIO_BUCKET = "la4j-agent"
+```
+
+应用会在首次文件操作时检查并按需创建 Bucket。Redis 仅保存文件 ID、Object Key 等元数据；RAG 或 Docling 解析时会临时下载对象，处理完成后自动清理本地副本。
 
 ## 短文颠覆性改编工作流
 
@@ -316,7 +326,7 @@ $env:REDIS_PORT = "6379"
 $env:REDIS_PASSWORD = "密码"
 ```
 
-当前嵌入模型只支持 Ollama，通过 `OLLAMA_EMBEDDING_MODEL` 指定模型名称。
+当前默认通过 OpenAI 兼容 Embedding 协议调用硅基流动，通过 `SILICONFLOW_EMBEDDING_MODEL` 指定向量模型，密钥读取 `GJLD_EMBEDDING`。`BAAI/bge-reranker-v2-m3` 用于重排，不能配置为向量模型。本地 Ollama 适配器仅保留显式配置能力，不会自动回退使用。
 
 项目会优先使用 Docling 将复杂文档转换为 Markdown，再交给 LangChain4j 切片和向量化。Docling 适合 PDF、Word、PPT、Excel、HTML 等结构复杂的文档，能更好保留标题、表格和阅读顺序。
 
@@ -362,6 +372,65 @@ $env:RAG_RETRIEVER_MAX_RESULTS = "6"
 $env:RAG_RETRIEVER_MIN_SCORE = "0.55"
 ```
 
+### Qdrant 向量存储
+
+RAG 默认使用 Qdrant 持久化文档向量，Java 客户端连接的是 gRPC 端口 `6334`。本地开发可使用项目提供的 Compose 文件：
+
+```powershell
+docker compose -f compose.qdrant.yml up -d
+```
+
+启动后可通过 `http://localhost:6333/dashboard` 查看 Collection。常用连接参数：
+
+```powershell
+$env:QDRANT_HOST = "localhost"
+$env:QDRANT_GRPC_PORT = "6334"
+$env:QDRANT_COLLECTION = "la4j_agent_sf_bge_m3"
+$env:QDRANT_DIMENSION = "1024"
+$env:QDRANT_DISTANCE = "COSINE"
+$env:QDRANT_USE_TLS = "false"
+$env:QDRANT_API_KEY = ""
+```
+
+`QDRANT_DIMENSION` 必须与 Embedding 模型输出维度一致。当前硅基流动 `BAAI/bge-m3` 实测为 1024 维；使用独立 Collection 与旧 Qwen 向量隔离，更换模型后已有文档需重建索引。需要在没有 Qdrant 的测试环境运行时，可以临时设置：
+
+```powershell
+$env:RAG_VECTOR_STORE_PROVIDER = "in-memory"
+```
+
+Qdrant 启动后，可运行真实 gRPC 联调，验证写入、客户端重连、文件隔离检索及删除；测试结束会清理本次创建的 Point：
+
+```powershell
+mvn "-Dtest=QdrantIntegrationTest" "-Dqdrant.integration=true" test
+```
+
+## MySQL 多数据源
+
+Knowledge 第一版已支持永久知识库、异步文档索引、文档/分块/Embedding 版本、混合检索和重排。管理页位于 `/knowledge`，对话页可选择知识库。详见 [Knowledge 第一版说明](docs/knowledge-v1.md)。
+
+项目使用 Spring JDBC、MySQL Connector/J、HikariCP 和 dynamic-datasource 的 Spring Boot 3 Starter，直接读取 `application.yml` 中的 `spring.datasource.dynamic` 配置。目前配置两个数据源：`szzh_bbzjcx`、`szc_frjzk`，默认数据源为 `szc_frjzk`。已开启严格匹配，错误的数据源名会报错。
+
+业务 Repository 可直接注入 `JdbcTemplate`；不指定数据源时使用默认库，需要切库时在 Spring Bean 的公开方法上增加：
+
+```java
+@DS("szzh_bbzjcx")
+public String readDatabaseName() {
+    return jdbcTemplate.queryForObject("SELECT DATABASE()", String.class);
+}
+```
+
+`@DS` 方法需要通过注入的 Spring Bean 调用，同类内部调用不会经过切库代理。切换数据源应在开启事务前完成；普通 JDBC 本地事务不会跨两个库提供原子提交。
+
+`MySqlConnectionService` 提供只读连接诊断：`currentDatabase()` 检查默认库，`database("szzh_bbzjcx")` 检查指定库。该服务未开放为 HTTP 接口或模型工具。
+
+使用配置中的真实连接执行只读联调：
+
+```powershell
+mvn "-Dtest=MySqlIntegrationTest" "-Dmysql.integration=true" test
+```
+
+Knowledge 的元数据与版本保存在 MySQL 的 `la4j_kb_` 前缀表；临时附件和工作流仍使用现有 Redis 持久化，原文件保存在 MinIO，向量保存在 Qdrant。
+
 ## 启用扩展工具
 
 GitHub 工具：
@@ -387,6 +456,14 @@ $env:FILESYSTEM_ALLOW_DELETE = "false"
 ```
 
 多个允许目录使用英文逗号分隔。只有明确需要时才应开启写入或删除权限。
+
+## 对话媒体返回约定
+
+- 图片能力返回 Markdown 图片：`![图片说明](图片地址)`，对话页会直接显示并提供原图入口。
+- 视频能力返回 Markdown 链接：`[下载视频](视频地址)`，对话页只显示下载卡片，不自动播放视频。
+- MinIO 文件可通过 `/api/ai/upload/{fileId}/content` 读取；安全的栅格图片使用内联响应，视频及其他文件使用附件下载响应。
+
+上述约定负责媒体传输和页面呈现。实际生成图片或视频仍需配置对应模型，并在 Capability Registry 中注册生成能力。
 
 ## 构建可执行包
 

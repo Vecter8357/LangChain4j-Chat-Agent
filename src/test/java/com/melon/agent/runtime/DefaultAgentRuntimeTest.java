@@ -24,8 +24,41 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.never;
 
 class DefaultAgentRuntimeTest {
+
+    @Test
+    void rejectsKnowledgeToolsThatExpandInputBaseOrDocumentScope() throws Exception {
+        ObjectMapper mapper = new ObjectMapper();
+        for (String arguments : List.of(
+                "{\"question\":\"q\",\"knowledgeBaseIds\":[\"another-base\"],\"fileIds\":[\"allowed-doc\"]}",
+                "{\"question\":\"q\",\"knowledgeBaseIds\":[\"allowed-base\"],\"fileIds\":[\"another-doc\"]}")) {
+            ChatModel model = mock(ChatModel.class);
+            var tool = ToolExecutionRequest.builder().id("search-1").name("knowledge__search").arguments(arguments).build();
+            when(model.chat(any(ChatRequest.class)))
+                    .thenReturn(ChatResponse.builder().aiMessage(AiMessage.from(tool)).build())
+                    .thenReturn(ChatResponse.builder().aiMessage(AiMessage.from("无法访问超出范围的来源")).build());
+            var registry = new InMemoryCapabilityRegistry();
+            var specification = ToolSpecification.builder().name("knowledge__search").description("search")
+                    .parameters(JsonObjectSchema.builder().build()).build();
+            registry.register(new CapabilityDescriptor("knowledge.search",CapabilityType.KNOWLEDGE,"search","search",null,null,
+                    specification.name(),true,false,"knowledge","search",Map.of(),specification));
+            CapabilityInvoker invoker = mock(CapabilityInvoker.class);
+            when(invoker.supportedTypes()).thenReturn(Set.of(CapabilityType.KNOWLEDGE));
+            var runtime = new DefaultAgentRuntime(model,registry,new CapabilityInvokerRegistry(List.of(invoker)),
+                    new AgentPlatformProperties(),mapper,new DagJsonSchemaValidator());
+            AgentDefinition definition = new AgentDefinition();definition.setId("test");definition.setSystemPrompt("search");
+            definition.setCapabilityIds(Set.of("knowledge.search"));definition.setMaxSteps(2);
+            AgentRunRequest request = new AgentRunRequest();request.setDefinition(definition);request.setObjective("search");
+            request.setInput(mapper.readTree("{\"knowledgeBaseIds\":[\"allowed-base\"],\"knowledgeFileIds\":[\"allowed-doc\"]}"));
+            var run = runtime.execute(request);
+            assertThat(run.getSteps().get(1).isSuccessful()).isFalse();
+            assertThat(run.getSteps().get(1).getErrorMessage()).contains("超出");
+            verify(invoker,never()).invoke(any());
+        }
+    }
 
     @Test
     void performsModelToolObservationLoopUntilFinalAnswer() {

@@ -15,6 +15,7 @@ import com.melon.workflow.dag.model.DagWorkflowRun;
 import com.melon.workflow.model.ModelRole;
 import com.melon.workflow.model.RewriteWorkflowState.ResearchEvidence;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -65,6 +66,26 @@ class DagNodeExecutorTest {
         assertThat(result.output().path("successful").asBoolean()).isTrue();
         assertThat(result.output().path("content").asText()).isEqualTo("检索结果");
         verify(gateway).research(any());
+    }
+
+    @Test
+    void mcpResearchAcceptsQueryAliasAsQuestion() {
+        McpResearchGateway gateway = mock(McpResearchGateway.class);
+        ResearchEvidence evidence = new ResearchEvidence();
+        evidence.setSuccessful(true);
+        when(gateway.research(any())).thenReturn(evidence);
+        McpToolDagNodeExecutor executor = new McpToolDagNodeExecutor(
+                gateway, mock(McpInvocationService.class), objectMapper);
+        Node node = node("search", NodeType.MCP_TOOL);
+        node.setConfig(objectMapper.createObjectNode().put("operation", "research"));
+
+        executor.execute(new DagNodeExecutionContext(new DagWorkflowRun(), node,
+                objectMapper.createObjectNode().put("query", "Agent 平台趋势"), 1));
+
+        ArgumentCaptor<com.melon.workflow.model.RewriteWorkflowState.ResearchPlanItem> captor =
+                ArgumentCaptor.forClass(com.melon.workflow.model.RewriteWorkflowState.ResearchPlanItem.class);
+        verify(gateway).research(captor.capture());
+        assertThat(captor.getValue().getQuestion()).isEqualTo("Agent 平台趋势");
     }
 
     @Test

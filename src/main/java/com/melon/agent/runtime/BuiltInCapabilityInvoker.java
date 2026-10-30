@@ -4,6 +4,9 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.TextNode;
 import com.melon.agent.capability.CapabilityType;
 import com.melon.service.RagService;
+import com.melon.knowledge.KnowledgeSearchService;
+import com.melon.knowledge.KnowledgeModels.SearchRequest;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.melon.tool.FilesystemTool;
 import org.springframework.stereotype.Component;
 
@@ -21,13 +24,18 @@ public class BuiltInCapabilityInvoker implements CapabilityInvoker {
 
     private final FilesystemTool filesystemTool;
     private final RagService ragService;
+    private final KnowledgeSearchService knowledgeSearch;
+    private final ObjectMapper objectMapper;
 
     /**
      * 创建内置能力调用器。
      */
-    public BuiltInCapabilityInvoker(FilesystemTool filesystemTool, RagService ragService) {
+    public BuiltInCapabilityInvoker(FilesystemTool filesystemTool, RagService ragService,
+                                    KnowledgeSearchService knowledgeSearch, ObjectMapper objectMapper) {
         this.filesystemTool = filesystemTool;
         this.ragService = ragService;
+        this.knowledgeSearch = knowledgeSearch;
+        this.objectMapper = objectMapper;
     }
 
     /** {@inheritDoc} */
@@ -44,6 +52,14 @@ public class BuiltInCapabilityInvoker implements CapabilityInvoker {
     public CapabilityInvocation.Result invoke(CapabilityInvocation.Request request) {
         Instant startedAt = Instant.now();
         try {
+            if ("knowledge".equals(request.capability().providerId()) && "search".equals(request.capability().providerOperation())) {
+                List<String> bases = new ArrayList<>(), files = new ArrayList<>();
+                request.arguments().path("knowledgeBaseIds").forEach(item -> bases.add(item.asText()));
+                request.arguments().path("fileIds").forEach(item -> files.add(item.asText()));
+                var result = knowledgeSearch.search(new SearchRequest(requiredText(request.arguments(),"question"),bases,files,null));
+                return new CapabilityInvocation.Result(true,objectMapper.valueToTree(result),null,null,false,
+                        Duration.between(startedAt,Instant.now()).toMillis());
+            }
             String output = switch (request.capability().providerId()) {
                 case "filesystem" -> filesystem(request.capability().providerOperation(), request.arguments());
                 case "knowledge" -> knowledge(request.capability().providerOperation(), request.arguments());

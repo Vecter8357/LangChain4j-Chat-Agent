@@ -62,6 +62,7 @@ public class PlatformAgentService {
         List<CapabilityDescriptor> capabilities = capabilityRegistry.list().stream()
                 .filter(CapabilityDescriptor::enabled)
                 .filter(capability -> hasFiles || !BuiltInCapabilityRegistrar.RAG_ANSWER.equals(capability.id()))
+                .filter(capability -> !BuiltInCapabilityRegistrar.KNOWLEDGE_SEARCH.equals(capability.id()))
                 .toList();
         return execute("general-chat-agent", GENERAL_SYSTEM_PROMPT, objective, fileIds, capabilities);
     }

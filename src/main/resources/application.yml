@@ -20,6 +20,27 @@ spring:
       port: ${REDIS_PORT:6379}
       password: ${REDIS_PASSWORD:password}
       database: ${REDIS_DATABASE:0}
+  datasource:
+    dynamic:
+      primary: szc_frjzk
+      # 数据源名称拼写错误时直接报错，避免请求落入错误的业务库。
+      strict: true
+      hikari:
+        minimum-idle: 1
+        maximum-pool-size: 5
+        connection-timeout: 10000
+        validation-timeout: 3000
+      datasource:
+        szzh_bbzjcx:
+          driver-class-name: com.mysql.cj.jdbc.Driver
+          url: jdbc:mysql://127.0.0.1:3306/szzh_bbzjcx?useSSL=false&serverTimezone=UTC
+          username: root
+          password: "4568357"
+        szc_frjzk:
+          driver-class-name: com.mysql.cj.jdbc.Driver
+          url: jdbc:mysql://127.0.0.1:3306/szc_frjzk?useSSL=false&serverTimezone=UTC
+          username: root
+          password: "4568357"
 
 logging:
   level:
@@ -30,9 +51,29 @@ logging:
 
 file:
   upload:
-    dir: ${FILE_UPLOAD_DIR:./data/uploads}
     max-size: 10485760
     allowed-types: pdf,txt,md,html,doc,docx,ppt,pptx,xls,xlsx
+    metadata-key-prefix: "upload:file:"
+minio:
+  configs:
+    - endpoint: ${MINIO_ENDPOINT:http://192.168.101.67:9000}
+      accessKey: ${MINIO_ACCESS_KEY:minioadmin}
+      secretKey: ${MINIO_SECRET_KEY:minioadmin}
+      bucket: ${MINIO_BUCKET:la4j-agent}
+
+knowledge:
+  datasource: ${KNOWLEDGE_DATASOURCE:szc_frjzk}
+  initialize-schema: ${KNOWLEDGE_INITIALIZE_SCHEMA:true}
+  workers: ${KNOWLEDGE_WORKERS:2}
+  embedding-revision: ${KNOWLEDGE_EMBEDDING_REVISION:siliconflow-bge-m3-v1}
+  recall-limit: 30
+  result-limit: 6
+  rerank:
+    provider: ${KNOWLEDGE_RERANK_PROVIDER:remote}
+    url: ${KNOWLEDGE_RERANK_URL:https://api.siliconflow.cn/v1/rerank}
+    api-key: ${KNOWLEDGE_RERANK_API_KEY:${GJLD_EMBEDDING:}}
+    model: ${KNOWLEDGE_RERANK_MODEL:BAAI/bge-reranker-v2-m3}
+    timeout: 30s
 
 rag:
   splitter:
@@ -40,6 +81,21 @@ rag:
     max-overlap-size: ${RAG_SPLITTER_MAX_OVERLAP_SIZE:120}
     max-results: ${RAG_RETRIEVER_MAX_RESULTS:6}
     min-score: ${RAG_RETRIEVER_MIN_SCORE:0.55}
+  vector-store:
+    provider: ${RAG_VECTOR_STORE_PROVIDER:qdrant}
+    qdrant:
+      host: ${QDRANT_HOST:localhost}
+      port: ${QDRANT_GRPC_PORT:6334}
+      use-tls: ${QDRANT_USE_TLS:false}
+      api-key: ${QDRANT_API_KEY:}
+      collection-name: ${QDRANT_COLLECTION:la4j_agent_sf_bge_m3}
+      payload-text-key: ${QDRANT_PAYLOAD_TEXT_KEY:text_segment}
+      # 必须与向量模型输出维度一致；硅基流动 BAAI/bge-m3 实测为 1024。
+      dimension: ${QDRANT_DIMENSION:1024}
+      distance: ${QDRANT_DISTANCE:COSINE}
+      on-disk: ${QDRANT_ON_DISK:false}
+      auto-create-collection: ${QDRANT_AUTO_CREATE_COLLECTION:true}
+      timeout: ${QDRANT_TIMEOUT:10s}
 
 tool-security:
   github:
@@ -82,7 +138,7 @@ tool-security:
 langchain4j:
   chat:
     # supported providers: ollama | openai | zhipu | aihub
-    provider: ${LLM_PROVIDER:aihub}
+    provider: ${LLM_PROVIDER:zhipu}
     aihub:
       base-url: ${AIHUB_BASE_URL:https://api.deepseek.com}
       name: ${AIHUB_NAME:AIHub}
@@ -102,19 +158,22 @@ langchain4j:
       max-tokens: 4096
       base-url: ${OPENAI_BASE_URL:https://openrouter.ai/api/v1}
       timeout: 600s
-#    zhipu:
-#      api-key: ${ZHIPU_API_KEY:}
-#      model-name: ${ZHIPU_MODEL_NAME:glm-4}
-#      temperature: 0.0
-#      max-tokens: 4096
-#      base-url: ${ZHIPU_BASE_URL:https://open.bigmodel.cn/api/paas/v4}
-#      timeout: 60s
+    zhipu:
+      # Local CC Switch OpenAI-compatible proxy (Codex provider).
+      api-key: ${ZHIPU_API_KEY:cc-switch}
+      model-name: ${ZHIPU_MODEL_NAME:glm-5.3-flash}
+      temperature: 0.0
+      max-tokens: 4096
+      base-url: ${ZHIPU_BASE_URL:https://www.guomohub.me/v1}
+      timeout: 60s
   embedding:
-    provider: ${EMBEDDING_PROVIDER:ollama}
-    ollama:
-      base-url: ${OLLAMA_BASE_URL:http://localhost:11434}
-      model-name: ${OLLAMA_EMBEDDING_MODEL:quentinz/bge-large-zh-v1.5:latest}
-      timeout: 600s
+    provider: ${EMBEDDING_PROVIDER:siliconflow}
+    siliconflow:
+      base-url: ${SILICONFLOW_EMBEDDING_BASE_URL:https://api.siliconflow.cn/v1}
+      api-key: ${GJLD_EMBEDDING:}
+      model-name: ${SILICONFLOW_EMBEDDING_MODEL:BAAI/bge-m3}
+      max-segments-per-batch: 16
+      timeout: 60s
 
 rewrite-workflow:
   enabled: ${REWRITE_WORKFLOW_ENABLED:true}

@@ -6,14 +6,21 @@ import com.melon.service.StreamingChatService;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.MediaType;
+import org.springframework.http.ContentDisposition;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
+import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody;
 
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 
 
 /**
@@ -26,6 +33,8 @@ import java.util.Map;
 @RequestMapping("/api/ai")
 @Slf4j
 public class AIController {
+    private static final Set<String> INLINE_IMAGE_SUBTYPES = Set.of("png", "jpeg", "gif", "webp", "avif");
+
     private final FileStorageService fileStorageService;
     private final StreamingChatService streamingChatService;
     
@@ -66,6 +75,36 @@ public class AIController {
             return ResponseEntity.badRequest().build();
         }
     }
+
+    /**
+     * 流式读取 MinIO 文件。图片允许浏览器内联显示，视频和其他文件默认作为附件下载。
+     */
+    @GetMapping("/upload/{fileId}/content")
+    public ResponseEntity<StreamingResponseBody> fileContent(
+            @PathVariable String fileId,
+            @RequestParam(defaultValue = "false") boolean download) {
+        UploadFile file = fileStorageService.getById(fileId);
+        MediaType mediaType = parseMediaType(file.getFileType());
+        boolean image = "image".equalsIgnoreCase(mediaType.getType())
+                && INLINE_IMAGE_SUBTYPES.contains(mediaType.getSubtype().toLowerCase(Locale.ROOT));
+        boolean attachment = download || !image;
+        ContentDisposition disposition = (attachment
+                ? ContentDisposition.attachment()
+                : ContentDisposition.inline())
+                .filename(file.getOriginalFileName(), StandardCharsets.UTF_8)
+                .build();
+        StreamingResponseBody body = output -> {
+            try (InputStream input = fileStorageService.openStream(file)) {
+                input.transferTo(output);
+            }
+        };
+        return ResponseEntity.ok()
+                .contentType(mediaType)
+                .contentLength(file.getSize())
+                .header(HttpHeaders.CONTENT_DISPOSITION, disposition.toString())
+                .header(HttpHeaders.CACHE_CONTROL, "private, max-age=3600")
+                .body(body);
+    }
     
     /**
      * 删除上传的文件
@@ -98,6 +137,15 @@ public class AIController {
             response.put("success", false);
             response.put("message", "文件删除失败: " + e.getMessage());
             return ResponseEntity.badRequest().body(response);
+        }
+    }
+
+    /** 将未知或非法 MIME 类型安全回退为二进制流。 */
+    private MediaType parseMediaType(String value) {
+        try {
+            return value == null ? MediaType.APPLICATION_OCTET_STREAM : MediaType.parseMediaType(value);
+        } catch (IllegalArgumentException ignored) {
+            return MediaType.APPLICATION_OCTET_STREAM;
         }
     }
     

@@ -161,11 +161,31 @@ button { cursor: pointer; }
     background-size: 20px 20px;
 }
 .edge-layer, .node-layer { position: absolute; inset: 0; }
-.edge-layer { overflow: visible; color: #94a3b8; }
+.edge-layer { overflow: visible; color: #94a3b8; pointer-events: none; }
+.node-layer { pointer-events: none; }
+.workflow-node { pointer-events: auto; }
+.edge-group { pointer-events: none; }
 .workflow-edge { fill: none; stroke: currentColor; stroke-width: 2; marker-end: url(#edge-arrow); }
 .workflow-edge.selected { color: var(--primary); stroke-width: 3; }
 .workflow-edge.error { color: var(--danger); }
-.edge-hit { fill: none; stroke: transparent; stroke-width: 14; cursor: pointer; }
+.edge-group:hover .workflow-edge { color: #6366f1; stroke-width: 3; }
+.edge-hit { fill: none; stroke: transparent; stroke-width: 26; cursor: pointer; pointer-events: stroke; }
+.edge-select-handle { cursor: pointer; color: #64748b; pointer-events: auto; }
+.edge-handle-ring { fill: white; stroke: currentColor; stroke-width: 2; filter: drop-shadow(0 1px 2px rgba(15, 23, 42, .18)); }
+.edge-handle-dot { fill: currentColor; pointer-events: none; }
+.edge-select-handle:hover, .edge-select-handle.selected { color: var(--primary); }
+.edge-select-handle:hover .edge-handle-ring { fill: #eef2ff; transform: scale(1.12); }
+.edge-delete { cursor: pointer; color: #dc2626; pointer-events: auto; }
+.edge-delete circle { fill: white; stroke: currentColor; stroke-width: 2; filter: drop-shadow(0 2px 3px rgba(15, 23, 42, .18)); }
+.edge-delete text {
+    fill: currentColor;
+    font-size: 17px;
+    font-weight: 700;
+    text-anchor: middle;
+    dominant-baseline: middle;
+    pointer-events: none;
+}
+.edge-delete:hover circle { fill: #fef2f2; transform: scale(1.08); }
 
 .workflow-node {
     position: absolute;
@@ -247,6 +267,18 @@ button { cursor: pointer; }
 .mapping-row input, .mapping-row select { width: 100%; min-width: 0; padding: 6px; border: 1px solid #cbd5e1; border-radius: 5px; font-size: 11px; }
 .icon-button { width: 28px; border: 1px solid #fecaca; color: var(--danger); background: #fff; border-radius: 5px; }
 .small-action { margin-top: 7px; padding: 6px 9px; color: #4338ca; background: #eef2ff; border: 1px solid #c7d2fe; border-radius: 5px; font-size: 11px; }
+.edge-danger-zone { padding-top: 14px; border-top: 1px solid #fee2e2; }
+.danger-action {
+    width: 100%;
+    padding: 8px 10px;
+    color: #b91c1c;
+    background: #fff;
+    border: 1px solid #fecaca;
+    border-radius: 6px;
+    font-weight: 700;
+    font-size: 12px;
+}
+.danger-action:hover { background: #fef2f2; border-color: #f87171; }
 .switch-row { display: flex; align-items: center; gap: 8px; font-size: 12px; }
 .switch-row input { width: auto; }
 

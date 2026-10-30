@@ -65,6 +65,19 @@ class DagWorkflowCompilerTest {
         assertThat(compiled.nodesById().get("analyze").getType()).isEqualTo(NodeType.AGENT);
     }
 
+    @Test
+    void rejectsResearchNodeWithoutQuestionBinding() {
+        DagWorkflowDefinition definition = validDefinition();
+        Node research = definition.getNodes().get(1);
+        research.setType(NodeType.MCP_TOOL);
+        research.setInputMappings(Map.of());
+        research.setConfig(objectMapper.createObjectNode().put("operation", "research"));
+
+        assertThatThrownBy(() -> compiler.compile(definition))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("inputMappings.question");
+    }
+
     private DagWorkflowDefinition validDefinition() {
         DagWorkflowDefinition definition = new DagWorkflowDefinition();
         definition.setCode("compiler-test");

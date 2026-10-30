@@ -51,6 +51,8 @@ public class LangChain4jModelProperties {
 
         private OllamaEmbeddingProperties ollama = new OllamaEmbeddingProperties();
 
+        private RemoteEmbeddingProperties siliconflow = new RemoteEmbeddingProperties();
+
         public String resolvedProvider() {
             if (StringUtils.hasText(provider)) {
                 return provider.trim();
@@ -58,8 +60,29 @@ public class LangChain4jModelProperties {
             if (StringUtils.hasText(enable)) {
                 return enable.trim();
             }
-            return "ollama";
+            return "siliconflow";
         }
+
+        /** 供索引版本与模型配置共用，避免切换提供方后仍记录 Ollama 模型。 */
+        public String resolvedModelName() {
+            return "ollama".equalsIgnoreCase(resolvedProvider()) ? ollama.getModelName() : siliconflow.getModelName();
+        }
+
+        /** 不含密钥的服务地址，可纳入向量空间版本标识。 */
+        public String resolvedBaseUrl() {
+            return "ollama".equalsIgnoreCase(resolvedProvider()) ? ollama.getBaseUrl() : siliconflow.getBaseUrl();
+        }
+    }
+
+    /** 硅基流动使用 OpenAI 兼容 Embedding 协议，密钥只从外部配置读取。 */
+    @Data
+    public static class RemoteEmbeddingProperties {
+        private String baseUrl = "https://api.siliconflow.cn/v1";
+        @lombok.ToString.Exclude
+        private String apiKey;
+        private String modelName = "BAAI/bge-m3";
+        private Duration timeout = Duration.ofSeconds(60);
+        private int maxSegmentsPerBatch = 16;
     }
 
     @Data

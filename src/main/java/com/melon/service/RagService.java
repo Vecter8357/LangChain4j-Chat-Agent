@@ -16,19 +16,19 @@ import dev.langchain4j.store.embedding.EmbeddingStore;
 import dev.langchain4j.store.embedding.EmbeddingSearchRequest;
 import dev.langchain4j.store.embedding.EmbeddingMatch;
 import dev.langchain4j.store.embedding.filter.MetadataFilterBuilder;
-import dev.langchain4j.store.embedding.inmemory.InMemoryEmbeddingStore;
 import com.melon.config.properties.RagProperties;
+import com.melon.config.properties.LangChain4jModelProperties;
+import com.melon.knowledge.KnowledgeProperties;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
 import java.nio.file.Files;
-import java.nio.file.Paths;
+import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 
 import static com.melon.prompt.Langchain4jPrompt.RAG_QUERY;
 
@@ -44,8 +44,8 @@ public class RagService {
     private final FileStorageService fileStorageService;
     private final DoclingDocumentProcessor doclingDocumentProcessor;
     
-    // 内存中存储文档的嵌入
-    private final EmbeddingStore<TextSegment> embeddingStore = new InMemoryEmbeddingStore<>();
+    // 由配置决定使用 Qdrant 或进程内存储。
+    private final EmbeddingStore<TextSegment> embeddingStore;
     
     // 嵌入模型
     private final EmbeddingModel embeddingModel;
@@ -59,9 +59,7 @@ public class RagService {
     private final int maxResults;
 
     private final double minScore;
-
-    // 记录文件ID到向量ID的映射，确保删除文件时能够准确清理向量。
-    private final Map<String, List<String>> fileEmbeddingIdsMap = new ConcurrentHashMap<>();
+    private final String embeddingProfile;
 
     /**
      * 创建 RAG 服务并初始化文档解析器、分段器及检索参数。
@@ -70,14 +68,22 @@ public class RagService {
     public RagService(ChatModel chatLanguageModel,
                       FileStorageService fileStorageService,
                       EmbeddingModel embeddingModel,
+                      EmbeddingStore<TextSegment> embeddingStore,
                       DoclingDocumentProcessor doclingDocumentProcessor,
-                      RagProperties ragProperties) {
+                      RagProperties ragProperties,
+                      LangChain4jModelProperties modelProperties,
+                      KnowledgeProperties knowledgeProperties) {
         this.chatLanguageModel = chatLanguageModel;
         this.fileStorageService = fileStorageService;
         this.doclingDocumentProcessor = doclingDocumentProcessor;
         
         // 初始化嵌入模型
         this.embeddingModel = embeddingModel;
+        this.embeddingStore = embeddingStore;
+        var config = modelProperties.getEmbedding();
+        this.embeddingProfile = config.resolvedProvider() + "|" + config.resolvedBaseUrl() + "|"
+                + config.resolvedModelName() + "|" + knowledgeProperties.getEmbeddingRevision() + "|"
+                + ragProperties.getVectorStore().getQdrant().getCollectionName();
         
         // 初始化文档解析器
         documentParsers.put("pdf", new ApachePdfBoxDocumentParser());
@@ -102,11 +108,11 @@ public class RagService {
      * @return 加载结果描述
      */
     public String loadFileToRag(UploadFile file) {
-        try {
+        try (MinioObjectStorageService.MaterializedObject localFile = fileStorageService.materialize(file)) {
             log.info("开始加载文件到RAG系统: {}", file.getOriginalFileName());
             
             String fileExtension = getFileExtension(file.getOriginalFileName()).toLowerCase();
-            Document document = parseDocument(file, fileExtension);
+            Document document = parseDocument(file, localFile.path(), fileExtension);
             
             // 分割文档
             List<TextSegment> segments = documentSplitter.split(document);
@@ -115,11 +121,18 @@ public class RagService {
             
             // 为片段创建嵌入并存储
             List<Embedding> embeddings = embeddingModel.embedAll(segments).content();
+            // 同一文件重新索引前先按持久化元数据删除旧 Point，避免应用重启后重复写入。
+            embeddingStore.removeAll(MetadataFilterBuilder.metadataKey("file_id").isEqualTo(file.getId()));
+            fileStorageService.markUnloadedFromRag(file.getId());
+            file.setLoadedToRag(false);
+            file.setEmbeddingIds(List.of());
             List<String> embeddingIds = embeddingStore.addAll(embeddings, segments);
-            fileEmbeddingIdsMap.put(file.getId(), embeddingIds);
             
             // 更新文件状态
             file.setLoadedToRag(true);
+            file.setEmbeddingIds(embeddingIds);
+            file.setEmbeddingProfile(embeddingProfile);
+            fileStorageService.markLoadedToRag(file.getId(), embeddingIds, embeddingProfile);
             
             log.info("文件已成功加载到RAG系统: {}", file.getOriginalFileName());
             return "文件已成功加载到RAG系统，共 " + segments.size() + " 个文本片段";
@@ -135,11 +148,13 @@ public class RagService {
      * @param fileId 文件ID
      */
     public void removeFileFromRag(String fileId) {
-        List<String> embeddingIds = fileEmbeddingIdsMap.remove(fileId);
-        if (embeddingIds != null && !embeddingIds.isEmpty()) {
-            embeddingStore.removeAll(embeddingIds);
-            log.info("已从RAG系统中移除文件: {}", fileId);
+        embeddingStore.removeAll(MetadataFilterBuilder.metadataKey("file_id").isEqualTo(fileId));
+        try {
+            fileStorageService.markUnloadedFromRag(fileId);
+        } catch (IllegalArgumentException ignored) {
+            log.debug("文件元数据已不存在，仅清理 Qdrant 向量: {}", fileId);
         }
+        log.info("已从RAG系统中移除文件: {}", fileId);
     }
 
     /**
@@ -156,7 +171,7 @@ public class RagService {
             // 先加载未加载过的文件
             List<UploadFile> files = fileStorageService.getByIds(fileIds);
             for (UploadFile file : files) {
-                if (!fileEmbeddingIdsMap.containsKey(file.getId())) {
+                if (!isIndexed(file)) {
                     loadFileToRag(file);
                 }
             }
@@ -184,7 +199,7 @@ public class RagService {
         }
         List<UploadFile> files = fileStorageService.getByIds(fileIds);
         for (UploadFile file : files) {
-            if (!fileEmbeddingIdsMap.containsKey(file.getId())) {
+            if (!isIndexed(file)) {
                 loadFileToRag(file);
             }
         }
@@ -212,6 +227,14 @@ public class RagService {
         return context.toString().trim();
     }
 
+    /** 判断 Redis 中的持久化文件元数据是否记录了完整索引状态。 */
+    private boolean isIndexed(UploadFile file) {
+        return file.isLoadedToRag()
+                && embeddingProfile.equals(file.getEmbeddingProfile())
+                && file.getEmbeddingIds() != null
+                && !file.getEmbeddingIds().isEmpty();
+    }
+
     /**
      * 获取文件扩展名
      *
@@ -228,14 +251,14 @@ public class RagService {
     /**
      * 优先使用 Docling 解析，允许时回退到原生解析器。
      */
-    private Document parseDocument(UploadFile file, String fileExtension) throws IOException {
-        return doclingDocumentProcessor.convertToDocument(file, fileExtension)
+    private Document parseDocument(UploadFile file, Path sourcePath, String fileExtension) throws IOException {
+        return doclingDocumentProcessor.convertToDocument(file, sourcePath, fileExtension)
                 .orElseGet(() -> {
                     if (!doclingDocumentProcessor.shouldFallbackToNativeParser()) {
                         throw new IllegalStateException("Docling未能解析文件，且已关闭原生解析回退: " + file.getOriginalFileName());
                     }
                     try {
-                        return parseWithNativeParser(file, fileExtension);
+                        return parseWithNativeParser(file, sourcePath, fileExtension);
                     } catch (IOException e) {
                         throw new IllegalStateException(e);
                     }
@@ -245,7 +268,7 @@ public class RagService {
     /**
      * 使用文件扩展名对应的原生解析器读取文档。
      */
-    private Document parseWithNativeParser(UploadFile file, String fileExtension) throws IOException {
+    private Document parseWithNativeParser(UploadFile file, Path sourcePath, String fileExtension) throws IOException {
         DocumentParser parser = documentParsers.get(fileExtension);
 
         if (parser == null) {
@@ -253,7 +276,7 @@ public class RagService {
                     + "。请安装并启用Docling，或上传支持的类型: " + String.join(", ", documentParsers.keySet()));
         }
 
-        Document document = parser.parse(Files.newInputStream(Paths.get(file.getFilePath())));
+        Document document = parser.parse(Files.newInputStream(sourcePath));
         document.metadata()
                 .put(Document.FILE_NAME, file.getOriginalFileName())
                 .put("source", "native")

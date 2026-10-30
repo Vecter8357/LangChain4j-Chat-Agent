@@ -38,4 +38,10 @@ public class ViewController {
     public String showWorkflowDesigner() {
         return "workflow";
     }
+
+    /** 知识库、文档版本与检索调试工作台。 */
+    @GetMapping("/knowledge")
+    public String showKnowledge() {
+        return "knowledge";
+    }
 }

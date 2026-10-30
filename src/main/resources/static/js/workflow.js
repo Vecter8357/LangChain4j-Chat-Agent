@@ -119,12 +119,15 @@
 
     function nodeFromTemplate(type, id, name) {
         const template = state.catalog?.nodeTypes?.find(item => item.type === type);
+        const inputMappings = type === 'MCP_TOOL'
+            ? {question: {path: '$.input.question', required: true}}
+            : {};
         return {
             id,
             name: name || template?.label || type,
             type,
             joinMode: 'ANY',
-            inputMappings: {},
+            inputMappings,
             config: clone(template?.defaultConfig || {}),
             timeoutSeconds: 120,
             retryPolicy: {maxAttempts: 1, backoffMillis: 0}
@@ -267,9 +270,33 @@
             from: sourceId,
             to: targetId
         });
+        configureResearchQuestionMapping(sourceId, targetId);
         state.connectFrom = null;
         markDirty();
         select('edge', `${sourceId}->${targetId}`);
+    }
+
+    function configureResearchQuestionMapping(sourceId, targetId) {
+        const source = findNode(sourceId);
+        const target = findNode(targetId);
+        if (!source || !target || target.type !== 'MCP_TOOL' || target.config?.capabilityId
+                || (target.config?.operation || 'research').toLowerCase() !== 'research') return;
+        const current = target.inputMappings?.question;
+        if (current && current.path && current.path !== '$.input.question') return;
+        target.inputMappings ||= {};
+        target.inputMappings.question = {path: suggestedQuestionPath(source), required: true};
+    }
+
+    function suggestedQuestionPath(source) {
+        const root = `$.nodes.${source.id}.output`;
+        const properties = source.type === 'START'
+            ? state.design.definition.inputSchema?.properties || {}
+            : source.config?.outputSchema?.properties || {};
+        for (const name of ['question', 'query', 'objective', 'prompt', 'topic', 'sourceText']) {
+            if (properties[name]) return `${root}.${name}`;
+        }
+        if (source.type === 'LLM' && source.config?.responseMode !== 'JSON_SCHEMA') return `${root}.text`;
+        return `${root}.question`;
     }
 
     function uniqueEdgeId(from, to) {
@@ -296,14 +323,36 @@
             const path = `M ${x1} ${y1} C ${x1 + bend} ${y1}, ${x2 - bend} ${y2}, ${x2} ${y2}`;
             const key = edgeKey(edge);
             const selected = state.selected.kind === 'edge' && state.selected.id === key;
-            return `<path class="edge-hit" data-edge-key="${escapeHtml(key)}" d="${path}"></path>
-                <path class="workflow-edge ${selected ? 'selected' : ''} ${errorEdges.has(key) ? 'error' : ''}" d="${path}"></path>`;
+            const middleX = (x1 + x2) / 2;
+            const middleY = (y1 + y2) / 2;
+            return `<g class="edge-group ${selected ? 'selected' : ''}">
+                <path class="workflow-edge ${selected ? 'selected' : ''} ${errorEdges.has(key) ? 'error' : ''}" d="${path}"></path>
+                <path class="edge-hit" data-edge-key="${escapeHtml(key)}" d="${path}"></path>
+                <g class="edge-select-handle ${selected ? 'selected' : ''}" data-select-edge="${escapeHtml(key)}" transform="translate(${middleX} ${middleY})" role="button" aria-label="选择连线">
+                    <circle class="edge-handle-ring" r="10"></circle><circle class="edge-handle-dot" r="3"></circle>
+                </g>
+                ${selected ? `<g class="edge-delete" data-delete-edge="${escapeHtml(key)}" transform="translate(${middleX} ${middleY - 30})" role="button" aria-label="删除连线">
+                    <circle r="12"></circle><text x="0" y="1">×</text>
+                </g>` : ''}
+            </g>`;
         }).join('');
         elements.edgeLayer.innerHTML = `<defs><marker id="edge-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 Z" fill="currentColor"></path></marker></defs>${paths}`;
         elements.edgeLayer.querySelectorAll('.edge-hit').forEach(path => {
             path.addEventListener('click', event => {
                 event.stopPropagation();
                 select('edge', path.dataset.edgeKey);
+            });
+        });
+        elements.edgeLayer.querySelectorAll('[data-select-edge]').forEach(handle => {
+            handle.addEventListener('click', event => {
+                event.stopPropagation();
+                select('edge', handle.dataset.selectEdge);
+            });
+        });
+        elements.edgeLayer.querySelectorAll('[data-delete-edge]').forEach(button => {
+            button.addEventListener('click', event => {
+                event.stopPropagation();
+                deleteEdge(button.dataset.deleteEdge);
             });
         });
     }
@@ -441,7 +490,7 @@
                     ${mcpCapabilities.map(capability => `<option value="${escapeHtml(capability.id)}" ${config.capabilityId === capability.id ? 'selected' : ''}>${escapeHtml(capability.name)} · ${escapeHtml(capability.id)}</option>`).join('')}
                 </select></div>
                 ${field('兼容操作', 'mcp-operation', config.operation || 'research')}
-                <p class="muted-help">选择 Capability 后，节点输入将直接作为 Tool 参数；未选择时只支持 research 兼容操作。</p>
+                <p class="muted-help">选择 Capability 后，节点输入将直接作为 Tool 参数；未选择时只支持 research 兼容操作，并且必须在下方输入映射中提供 question。连接上游节点时会自动生成建议映射。</p>
             </div>`;
         }
         if (node.type === 'CONDITION') {
@@ -477,8 +526,13 @@
         } else if (node.type === 'MCP_TOOL') {
             $('mcp-capability').addEventListener('change', event => {
                 if (event.target.value) node.config.capabilityId = event.target.value;
-                else delete node.config.capabilityId;
+                else {
+                    delete node.config.capabilityId;
+                    node.inputMappings ||= {};
+                    node.inputMappings.question ||= {path: '$.input.question', required: true};
+                }
                 markDirty();
+                renderNodeInspector(node);
             });
             $('mcp-operation').addEventListener('input', event => { node.config.operation = event.target.value; markDirty(); });
         }
@@ -587,7 +641,12 @@
                     ${field('比较值 JSON', 'edge-condition-value', condition?.value === undefined ? '' : pretty(condition.value))}
                     <p class="muted-help">TRUTHY、FALSY、EXISTS、NOT_EXISTS 不需要比较值。</p>
                 </div>
+            </div>
+            <div class="form-section edge-danger-zone">
+                <button id="delete-edge-button" class="danger-action" type="button">删除连线</button>
+                <p class="muted-help">也可以点击画布连线中部的 ×，或按键盘 Delete。</p>
             </div>`;
+        $('delete-edge-button').addEventListener('click', () => deleteEdge(edgeKey(edge)));
         $('edge-condition-enabled').addEventListener('change', event => {
             if (event.target.checked) edge.condition = {path: sourcePaths[0] || '$.input', operator: 'TRUTHY'};
             else delete edge.condition;
@@ -612,12 +671,24 @@
             state.design.definition.edges = state.design.definition.edges.filter(edge => edge.from !== nodeId && edge.to !== nodeId);
             delete state.design.positions[nodeId];
         } else if (state.selected.kind === 'edge') {
-            state.design.definition.edges = state.design.definition.edges.filter(edge => edgeKey(edge) !== state.selected.id);
+            deleteEdge(state.selected.id);
+            return;
         } else return;
         state.selected = {kind: 'workflow', id: null};
         state.validationErrors = [];
         markDirty();
         renderAll();
+    }
+
+    function deleteEdge(key) {
+        const before = state.design.definition.edges.length;
+        state.design.definition.edges = state.design.definition.edges.filter(edge => edgeKey(edge) !== key);
+        if (state.design.definition.edges.length === before) return;
+        state.selected = {kind: 'workflow', id: null};
+        state.validationErrors = [];
+        markDirty();
+        renderAll();
+        notify('连线已删除');
     }
 
     async function validateDefinition(showSuccess = true) {
@@ -695,6 +766,19 @@
         });
         state.design.definition.edges ||= [];
         state.design.definition.edges.forEach(edge => edge.id ||= uniqueEdgeId(edge.from, edge.to));
+        state.design.definition.nodes
+            .filter(node => node.type === 'MCP_TOOL' && !node.config?.capabilityId
+                && (node.config?.operation || 'research').toLowerCase() === 'research')
+            .forEach(node => {
+                const hasQuestion = ['question', 'query', 'objective', 'prompt', 'topic', 'sourceText']
+                    .some(name => node.inputMappings?.[name]);
+                if (hasQuestion) return;
+                const incoming = state.design.definition.edges.find(edge => edge.to === node.id);
+                node.inputMappings.question = {
+                    path: incoming ? suggestedQuestionPath(findNode(incoming.from)) : '$.input.question',
+                    required: true
+                };
+            });
         state.design.definition.outputMappings ||= {};
     }
 

@@ -64,9 +64,11 @@ public class McpToolDagNodeExecutor implements DagNodeExecutor {
             throw new IllegalArgumentException("MCP_TOOL MVP 当前只支持 research 操作: " + operation);
         }
 
-        String question = text(context.input(), "question", config);
+        String question = firstText(context.input(), config,
+                "question", "query", "objective", "prompt", "topic", "sourceText");
         if (!StringUtils.hasText(question)) {
-            throw new IllegalArgumentException("MCP research 节点必须提供 question");
+            throw new IllegalArgumentException("MCP research 节点 " + context.node().getId()
+                    + " 必须通过 inputMappings.question 或 config.question 提供研究问题");
         }
         ResearchPlanItem item = new ResearchPlanItem();
         item.setQuestion(question);
@@ -85,5 +87,18 @@ public class McpToolDagNodeExecutor implements DagNodeExecutor {
             return inputValue.asText();
         }
         return config == null ? null : config.path(field).asText(null);
+    }
+
+    /**
+     * 按候选字段顺序寻找第一个非空文本，兼容常见的 query、objective 和 sourceText 命名。
+     */
+    private String firstText(JsonNode input, JsonNode config, String... fields) {
+        for (String field : fields) {
+            String value = text(input, field, config);
+            if (StringUtils.hasText(value)) {
+                return value;
+            }
+        }
+        return null;
     }
 }

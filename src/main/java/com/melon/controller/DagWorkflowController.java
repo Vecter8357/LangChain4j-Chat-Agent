@@ -221,6 +221,7 @@ public class DagWorkflowController {
         if (value.contains("instruction")) return "config.instruction";
         if (value.contains("systemprompt")) return "config.systemPrompt";
         if (value.contains("capabilityid")) return "config.capabilityId";
+        if (value.contains("question") || value.contains("研究问题")) return "inputMappings.question";
         if (value.contains("timeoutseconds")) return "timeoutSeconds";
         if (value.contains("retrypolicy")) return "retryPolicy";
         if (value.contains("输入映射") || value.contains("引用")) return "inputMappings";
