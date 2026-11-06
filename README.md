@@ -29,7 +29,8 @@ $env:GJLD_EMBEDDING = "你的硅基流动API Key"
 默认 Embedding 提供方为 `siliconflow`。聊天模型仍由 `LLM_PROVIDER` 独立选择，启动项目：
 
 ```powershell
-mvn spring-boot:run
+mvn -pl openmanus-app -am package -DskipTests
+java -jar openmanus-app/target/openmanus-app-0.0.1-SNAPSHOT.jar
 ```
 
 也可以在 IntelliJ IDEA 中运行 `com.melon.OpenManusApplication`。
@@ -42,7 +43,8 @@ PowerShell 示例：
 $env:LLM_PROVIDER = "openai"
 $env:OPENAI_API_KEY = "你的 API Key"
 $env:OPENAI_MODEL_NAME = "gpt-4o-mini"
-mvn spring-boot:run
+mvn -pl openmanus-app -am package -DskipTests
+java -jar openmanus-app/target/openmanus-app-0.0.1-SNAPSHOT.jar
 ```
 
 智谱模型：
@@ -51,7 +53,8 @@ mvn spring-boot:run
 $env:LLM_PROVIDER = "zhipu"
 $env:ZHIPU_API_KEY = "你的 API Key"
 $env:ZHIPU_MODEL_NAME = "glm-4"
-mvn spring-boot:run
+mvn -pl openmanus-app -am package -DskipTests
+java -jar openmanus-app/target/openmanus-app-0.0.1-SNAPSHOT.jar
 ```
 
 任意兼容 OpenAI Chat Completions 协议的服务：
@@ -61,10 +64,11 @@ $env:LLM_PROVIDER = "aihub"
 $env:AIHUB_BASE_URL = "https://你的服务地址/v1"
 $env:AIHUB_API_KEY = "你的 API Key"
 $env:AIHUB_MODEL_NAME = "模型名称"
-mvn spring-boot:run
+mvn -pl openmanus-app -am package -DskipTests
+java -jar openmanus-app/target/openmanus-app-0.0.1-SNAPSHOT.jar
 ```
 
-也可以直接修改 `src/main/resources/application.yml` 中的 `langchain4j.chat.provider`。可选值为 `ollama`、`openai`、`zhipu`、`aihub`；切换后重启应用即可，无需修改 Java 代码。
+也可以直接修改 `openmanus-app/src/main/resources/application.yml` 中的 `langchain4j.chat.provider`。可选值为 `ollama`、`openai`、`zhipu`、`aihub`；切换后重启应用即可，无需修改 Java 代码。
 
 ## 使用方式
 
@@ -248,6 +252,17 @@ Invoke-RestMethod "http://localhost:8898/api/dag-workflows/runs/$($run.runId)"
 
 这是执行内核和画布的第一阶段：工作流定义及画布位置可以保存到 Redis，运行状态仍以 Redis 单 Key 保存，调度使用本地线程池。完整版本发布与回滚、持久消息队列、人工节点、动态 `FOREACH/JOIN`、暂停恢复、单节点执行和并行分支调度尚未包含在该 MVP 中。
 
+### 聊天与 DAG 复用通用 Agent
+
+普通会话聊天 `/api/memory/chat` 和无会话聊天 `/api/ai/stream` 都运行 `general-chat-agent`。在工作流设计器的 AGENT 节点中，将「Agent 来源」切换为「通用聊天 Agent」，并映射 `objective`，即可复用同一套提示词、模型和能力选择。API 使用 `config.agentRef` 指定该 Agent，已有内联 AGENT 节点继续使用原有配置。
+
+```powershell
+Invoke-RestMethod -Method Post -Uri http://localhost:8080/api/dag-workflows/runs `
+  -ContentType 'application/json; charset=utf-8' -InFile examples/dag-general-chat-agent-run-example.json
+```
+
+通过返回的 `runId` 查询 `GET /api/dag-workflows/runs/{runId}`，节点输出包含 `agentId`、`finalAnswer` 和执行步骤。
+
 ## Agent 平台内核
 
 项目包含三个相互独立但可以组合使用的核心组件：
@@ -401,8 +416,16 @@ $env:RAG_VECTOR_STORE_PROVIDER = "in-memory"
 Qdrant 启动后，可运行真实 gRPC 联调，验证写入、客户端重连、文件隔离检索及删除；测试结束会清理本次创建的 Point：
 
 ```powershell
-mvn "-Dtest=QdrantIntegrationTest" "-Dqdrant.integration=true" test
+mvn -pl openmanus-context -am "-Dtest=QdrantIntegrationTest" "-Dsurefire.failIfNoSpecifiedTests=false" "-Dqdrant.integration=true" test
 ```
+
+## Memory 会话与记忆
+
+功能归属、模块间数据边界、已修复串用问题及剩余限制，见 [数据隔离复核](docs/data-isolation-audit.md)。
+
+聊天页已支持基于 MySQL 的会话历史、任务进展和项目绑定，以及基于 MySQL + Qdrant 的长期、项目、任务记忆。侧边栏可切换会话、创建项目/任务、明确记录和修改记忆；普通聊天与知识库问答会自动组装历史上下文。Agent / DAG 可通过 `memory.recall` 读取授权范围内的记忆。
+
+长期写入目前由用户在记忆面板明确提交；自动画像、Skill 学习和 DAG 检查点恢复仍未实现。详见 [Memory 第一版说明](docs/memory-v1.md)。
 
 ## MySQL 多数据源
 
@@ -426,7 +449,7 @@ public String readDatabaseName() {
 使用配置中的真实连接执行只读联调：
 
 ```powershell
-mvn "-Dtest=MySqlIntegrationTest" "-Dmysql.integration=true" test
+mvn -pl openmanus-app -am "-Dtest=MySqlIntegrationTest" "-Dsurefire.failIfNoSpecifiedTests=false" "-Dmysql.integration=true" test
 ```
 
 Knowledge 的元数据与版本保存在 MySQL 的 `la4j_kb_` 前缀表；临时附件和工作流仍使用现有 Redis 持久化，原文件保存在 MinIO，向量保存在 Qdrant。
@@ -465,11 +488,22 @@ $env:FILESYSTEM_ALLOW_DELETE = "false"
 
 上述约定负责媒体传输和页面呈现。实际生成图片或视频仍需配置对应模型，并在 Capability Registry 中注册生成能力。
 
+## Maven 模块
+
+| 模块 | 职责 |
+| --- | --- |
+| `openmanus-runtime` | Agent 执行内核、能力目录和调用契约 |
+| `openmanus-context` | Memory、Knowledge 和临时附件 RAG |
+| `openmanus-tools` | MCP 发现与调用、本地工具及兼容入口 |
+| `openmanus-workflow` | DAG 和改编工作流 |
+| `openmanus-model` | Chat、Streaming Chat 和 Embedding 模型配置 |
+| `openmanus-app` | Spring Boot 装配、HTTP、SSE 和页面 |
+
 ## 构建可执行包
 
 ```powershell
 mvn clean package
-java -jar target/openmanus-springboot-0.0.1-SNAPSHOT.jar
+java -jar openmanus-app/target/openmanus-app-0.0.1-SNAPSHOT.jar
 ```
 
 ## 常见问题
@@ -481,4 +515,4 @@ java -jar target/openmanus-springboot-0.0.1-SNAPSHOT.jar
 - 网页抓取失败：确认已安装 Python 环境和 `uvx`，并且目标网站可访问。
 - 端口冲突：通过 `SERVER_PORT` 覆盖 Spring Boot 默认端口，例如 `$env:SERVER_PORT = "8081"`。
 
-主要配置位于 `src/main/resources/application.yml`。API Key 和访问令牌均通过环境变量注入，请勿将真实凭据提交到仓库。
+主要配置位于 `openmanus-app/src/main/resources/application.yml`。API Key 和访问令牌均通过环境变量注入，请勿将真实凭据提交到仓库。

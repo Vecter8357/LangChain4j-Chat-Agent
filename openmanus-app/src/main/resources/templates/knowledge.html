@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Knowledge · 知识库</title><link rel="stylesheet" href="/css/knowledge.css"><script src="/js/knowledge.js" defer></script></head>
+<body>
+<header><a class="brand" href="/knowledge"><span class="brand-mark">K</span> Knowledge <small>知识工作台</small></a><nav><a href="/chat">智能对话 ↗</a><a href="/workflows">工作流 ↗</a></nav></header>
+<main>
+  <aside class="library-panel">
+    <div class="eyebrow">YOUR LIBRARIES</div><h1>知识库</h1><p class="muted">将文档变成可追溯的答案。</p>
+    <form id="base-form"><label for="base-name">新建知识库</label><input id="base-name" maxlength="200" placeholder="例如：产品手册" required><textarea id="base-description" maxlength="10000" placeholder="描述（可选）" rows="2"></textarea><button class="primary" type="submit">＋ 创建知识库</button></form>
+    <div id="base-list" aria-label="知识库列表"></div>
+  </aside>
+  <section class="workspace">
+    <div id="notice" role="status" aria-live="polite"></div>
+    <div class="workspace-heading"><div><div class="eyebrow">KNOWLEDGE WORKSPACE</div><h2 id="selected-name">选择或创建知识库</h2><p id="selected-description" class="muted">永久文档不会在对话结束后删除。</p></div><button id="delete-base" class="danger" disabled>删除知识库</button></div>
+    <section class="card"><div class="section-heading"><div><h3>文档</h3><p class="muted">异步解析与索引 · 新版本就绪后自动生效</p></div><button id="refresh" type="button">刷新状态</button></div>
+      <form id="upload-form" class="upload-zone"><div><label for="document-file">添加永久文档</label><p class="muted">支持 PDF、TXT、Markdown、Word、PPT、Excel、HTML。单文件不超过 10MB。</p></div><input id="document-file" type="file" accept=".pdf,.txt,.md,.html,.doc,.docx,.ppt,.pptx,.xls,.xlsx" required><button class="primary" type="submit" id="upload" disabled>上传并建立索引</button></form>
+      <div class="table-scroll"><table><thead><tr><th>文件 / 版本</th><th>状态</th><th>索引</th><th>操作</th></tr></thead><tbody id="documents"><tr><td colspan="4" class="empty">选择知识库后管理文档</td></tr></tbody></table></div>
+    </section>
+    <section class="card" id="document-detail" hidden><div class="section-heading"><h3 id="detail-title">文档版本与分块</h3><button id="close-detail" type="button">收起</button></div><div id="versions" class="version-list"></div><label for="index-version">查看索引版本</label><select id="index-version"></select><div id="chunks" class="chunk-list"></div></section>
+    <section class="card"><div class="section-heading"><div><h3>检索调试</h3><p class="muted">向量 + 全文召回 → RRF 融合 → Rerank；展示实际来源与版本。</p></div><span class="pill">HYBRID SEARCH</span></div>
+      <form id="search-form"><label for="search-question">检索问题</label><div class="search-row"><input id="search-question" placeholder="输入问题，检查哪些片段能支撑回答…" maxlength="2000" required><button type="submit" id="search" class="primary" disabled>检索</button></div><label for="search-file">文件范围</label><select id="search-file"><option value="">知识库中的所有文件</option></select></form><p id="search-info" class="muted"></p><div id="search-results"></div>
+    </section>
+  </section>
+</main>
+</body></html>

@@ -1,0 +1,20 @@
+.agent-tools-sidebar { overflow-y: auto; max-height: calc(100vh - 2rem); }
+.memory-panel { margin: 16px 0; padding-top: 14px; border-top: 1px solid #d7dcec; font-size: 13px; }
+.memory-panel h3 { margin: 0 0 12px; font-size: 15px; }
+.memory-panel label { display: block; margin: 10px 0 5px; }
+.memory-panel select,.memory-panel textarea { box-sizing: border-box; width: 100%; background: var(--card-bg); color: var(--text-color); border: 1px solid #a8b2cc; border-radius: 6px; padding: 7px; font: inherit; }
+.memory-panel textarea { min-height: 66px; resize: vertical; }
+.memory-actions { display: flex; flex-wrap: wrap; gap: 6px; margin: 7px 0; }
+.memory-panel button { cursor: pointer; padding: 5px 8px; border: 1px solid #596078; border-radius: 5px; background: #343b64; color: #fff; font: inherit; }
+.memory-panel button:disabled { opacity: .5; cursor: wait; }
+.memory-panel small { display: block; color: #5e6b82; line-height: 1.5; }
+.memory-entry { margin: 8px 0; padding: 8px; border: 1px solid #d7dcec; border-radius: 5px; }
+.memory-entry p { margin: 0 0 5px; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 130px; overflow: auto; }
+.memory-notice { color: #4456a0; white-space: pre-wrap; margin-top: 8px; }
+@media (prefers-color-scheme: dark) {
+    .memory-panel,.memory-entry { border-color: #41465b; }
+    .memory-panel select,.memory-panel textarea { background: #202536; color: #eef0ff; border-color: #596078; }
+    .memory-panel small { color: #b5bed3; }
+    .memory-notice { color: #c9d4ff; }
+}
+@media (max-width: 768px) { .agent-tools-sidebar { max-height: none; } }

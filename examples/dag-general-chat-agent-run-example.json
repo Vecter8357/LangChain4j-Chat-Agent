@@ -1,0 +1,26 @@
+{
+  "definition": {
+    "code": "shared-chat-agent",
+    "name": "通用聊天 Agent",
+    "version": 1,
+    "nodes": [
+      { "id": "start", "type": "START" },
+      {
+        "id": "agent",
+        "type": "AGENT",
+        "config": { "agentRef": "general-chat-agent" },
+        "inputMappings": { "objective": { "path": "$.input.objective", "required": true } }
+      },
+      {
+        "id": "end",
+        "type": "END",
+        "inputMappings": { "answer": { "path": "$.nodes.agent.output.finalAnswer", "required": true } }
+      }
+    ],
+    "edges": [
+      { "from": "start", "to": "agent" },
+      { "from": "agent", "to": "end" }
+    ]
+  },
+  "input": { "objective": "用一句话说明本项目的用途。" }
+}
