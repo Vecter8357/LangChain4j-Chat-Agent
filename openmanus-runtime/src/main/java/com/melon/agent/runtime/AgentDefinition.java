@@ -19,5 +19,6 @@ public class AgentDefinition {
 
     private Set<String> capabilityIds = new LinkedHashSet<>();
 
+    /** 普通模型轮次上限，零值沿用平台默认值，预算收束可额外请求一次模型。 */
     private int maxSteps;
 }

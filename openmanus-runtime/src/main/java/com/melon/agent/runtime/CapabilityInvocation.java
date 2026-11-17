@@ -21,13 +21,19 @@ public final class CapabilityInvocation {
      * @param agentId Agent 标识
      * @param capability 被调用的能力描述
      * @param arguments 已解析的 JSON 参数
+     * @param toolCallId 与模型请求、步骤轨迹和工具结果关联的调用 ID
      */
     public record Request(
             String runId,
             String agentId,
             CapabilityDescriptor capability,
-            JsonNode arguments
+            JsonNode arguments,
+            String toolCallId
     ) {
+        /** 兼容既有调用方，缺省调用 ID 由执行入口决定。 */
+        public Request(String runId, String agentId, CapabilityDescriptor capability, JsonNode arguments) {
+            this(runId, agentId, capability, arguments, null);
+        }
     }
 
     /**

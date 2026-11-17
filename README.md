@@ -271,6 +271,23 @@ Invoke-RestMethod -Method Post -Uri http://localhost:8080/api/dag-workflows/runs
 - Capability Registry：保存 Agent 可使用的能力、模型工具名、输入 Schema 和提供方信息。
 - MCP Invocation Service：管理 MCP 长连接、发现 Tools、校验参数并执行调用。
 
+ReAct 的执行限制由 `agent-platform.runtime` 配置。`default-max-steps` 和 Agent 定义中的 `maxSteps` 继续限制普通模型轮次，行动停止后可以额外执行一次无工具收束。Runtime 的总时长从 `AgentRuntime.execute()` 开始计算。
+
+| 配置 | 默认值 | 含义 |
+| --- | --- | --- |
+| `max-tool-calls` | 16 | 一次运行的工具提交尝试上限 |
+| `max-tool-calls-per-round` | 4 | 一条模型消息允许执行的工具请求数 |
+| `max-repeated-tool-calls` | 2 | 相同参数连续取得相同结果的允许次数，下一次调用触发收束 |
+| `max-run-duration` | 600s | 包含最终收束的 Runtime 总时间 |
+| `max-model-duration` | 120s | 单次模型调用等待上限 |
+| `max-tool-duration` | 120s | 单次工具调用等待上限 |
+| `finalization-duration` | 30s | 从总时间中预留给额外一次收束的时间 |
+| `max-concurrent-invocations` | 16 | 每个 Runtime 同时执行的外部调用数，另有一个排队位置 |
+
+所有限制均需为正数，`finalization-duration` 必须小于 `max-run-duration`。每次工具请求都有对应的结果消息，超出预算的请求记录拒绝原因。收束请求携带已配对的工具结果并移除工具规格，收束响应再次请求工具时执行失败。相同参数取得新的结果会重新开始重复计数。轨迹中的 `toolCallId` 关联模型请求、能力调用和 MCP 请求，`round` 标识所属模型轮次。
+
+`AgentRun` 新增 `finishReason`、`modelCallCount` 和 `toolCallCount`。自然回答使用 `FINAL_ANSWER`，预算或重复调用触发收束后保留触发原因。收束产生有效文本时状态为 `COMPLETED`，收束指令要求说明已有结果及未完成事项。硬超时、收束失败或调用池拒绝返回失败状态，中断返回 `CANCELLED`。超时只结束本地等待并请求中断，远端操作仍需按工具能力确认执行状态。次数统计以 Runtime 提交尝试为准，SDK 内部重试也受外层等待时间限制。
+
 配置一个 stdio MCP Server：
 
 ```yaml
@@ -366,7 +383,7 @@ $env:RAG_DOCLING_ENABLED = "false"
 
 ```powershell
 $env:GITHUB_TOOL_ENABLED = "true"
-$env:GITHUB_ALLOWED_REPOSITORIES = "langchain4j/langchain4j,melon1010/LangChain4j-Springboot"
+$env:GITHUB_ALLOWED_REPOSITORIES = "langchain4j/langchain4j,vecter/LangChain4j-Springboot"
 $env:FETCH_ALLOWED_DOMAINS = "docs.langchain4j.dev,github.com"
 $env:FETCH_MAX_RESPONSE_LENGTH = "200000"
 $env:FILESYSTEM_ALLOWED_ROOTS = "D:\safe-directory"
@@ -390,6 +407,8 @@ $env:RAG_RETRIEVER_MIN_SCORE = "0.55"
 ### Qdrant 向量存储
 
 RAG 默认使用 Qdrant 持久化文档向量，Java 客户端连接的是 gRPC 端口 `6334`。本地开发可使用项目提供的 Compose 文件：
+
+Windows 安装并启动 Docker Desktop（Linux 容器模式）后，可在项目根目录运行 `./start-qdrant.cmd`，或执行 `powershell -NoProfile -ExecutionPolicy Bypass -File .\Start-Qdrant.ps1`。脚本复用下方 Compose 配置和现有命名卷，不重建已有容器，并等待 `/readyz` 就绪；启动完成后打开 `http://localhost:6333/dashboard`。
 
 ```powershell
 docker compose -f compose.qdrant.yml up -d
@@ -509,6 +528,7 @@ java -jar openmanus-app/target/openmanus-app-0.0.1-SNAPSHOT.jar
 ## 常见问题
 
 - 页面能打开但模型无回复：确认所选模型服务已启动、API Key 有效，且 `base-url` 使用 OpenAI 兼容地址而不是 Anthropic 专用地址。
+- 改编工作流出现 `WorkflowModelGateway.text/json` 的 `request timed out`：表示模型 HTTP 请求超时，排查报错中的角色、模型路由和耗时。聊天模型的 HTTP 超时默认均为 `600s`，可通过 `ZHIPU_TIMEOUT`、`AIHUB_TIMEOUT`、`OPENAI_TIMEOUT`、`OLLAMA_CHAT_TIMEOUT` 分别覆盖，修改后重启应用。SDK 自身可能重试，因此总耗时可能超过单次 HTTP 超时；远端服务或代理也可能提前中断请求。
 - 文档上传失败：确认 Redis 已启动；超过 Spring 上传限制的文件会被拒绝。
 - 文档无法回答：确认 Ollama 已启动并已下载嵌入模型；复杂文档建议安装 Docling，否则只能回退解析 PDF 和 TXT。
 - GitHub 查询失败：确认 Node.js、`npx` 和 `GITHUB_TOKEN` 可用。
@@ -516,3 +536,5 @@ java -jar openmanus-app/target/openmanus-app-0.0.1-SNAPSHOT.jar
 - 端口冲突：通过 `SERVER_PORT` 覆盖 Spring Boot 默认端口，例如 `$env:SERVER_PORT = "8081"`。
 
 主要配置位于 `openmanus-app/src/main/resources/application.yml`。API Key 和访问令牌均通过环境变量注入，请勿将真实凭据提交到仓库。
+
+改编角色先匹配 `rewrite-workflow.model-by-role` 的自定义模型 Bean，再匹配 `provider-by-role`，最后使用默认 `chatLanguageModel`（`LLM_PROVIDER` 默认 `zhipu`）。自定义 Bean 的超时由它自身配置。直接改编模型调用使用供应商 HTTP 超时；聊天 Agent 另受 ReAct 的 `agent.runtime.max-model-duration` 限制（默认 `120s`），DAG 节点另受 `timeoutSeconds` 限制（默认 `120`），需要结合实际入口调整。

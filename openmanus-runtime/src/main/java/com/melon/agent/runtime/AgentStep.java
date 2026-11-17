@@ -13,6 +13,15 @@ public class AgentStep {
 
     private int sequence;
 
+    /** 所属模型请求轮次，额外的最终收束也占用一个轮次编号。 */
+    private int round;
+
+    /** 工具请求及其结果的关联 ID，模型步骤为空。 */
+    private String toolCallId;
+
+    /** 标明该模型步骤是否为预算触发的最终收束。 */
+    private boolean finalization;
+
     private StepType type;
 
     private String modelText;

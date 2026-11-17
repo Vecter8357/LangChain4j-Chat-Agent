@@ -134,7 +134,7 @@ public class DefaultMcpInvocationService implements McpInvocationService {
         try {
             McpClient client = connectionManager.get(capability.providerId());
             ToolExecutionRequest executionRequest = ToolExecutionRequest.builder()
-                    .id(UUID.randomUUID().toString())
+                    .id(StringUtils.hasText(request.toolCallId()) ? request.toolCallId() : UUID.randomUUID().toString())
                     .name(capability.providerOperation())
                     .arguments(objectMapper.writeValueAsString(arguments))
                     .build();

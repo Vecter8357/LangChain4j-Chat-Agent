@@ -33,7 +33,7 @@ public class McpCapabilityInvoker implements CapabilityInvoker {
     @Override
     public CapabilityInvocation.Result invoke(CapabilityInvocation.Request request) {
         McpInvocationResult result = invocationService.invoke(new McpInvocationRequest(
-                request.runId(), request.agentId(), request.capability().id(), request.arguments()));
+                request.runId(), request.agentId(), request.capability().id(), request.arguments(), request.toolCallId()));
         return new CapabilityInvocation.Result(result.successful(), result.content(), result.errorCode(),
                 result.errorMessage(), result.retryable(), result.durationMillis());
     }

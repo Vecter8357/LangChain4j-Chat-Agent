@@ -24,6 +24,15 @@ public class AgentRun {
 
     private String failureReason;
 
+    /** 自然完成、预算收束或异常终止的原因，与执行状态分别记录。 */
+    private FinishReason finishReason;
+
+    /** 尝试提交的模型调用次数，包含最后一次收束。 */
+    private int modelCallCount;
+
+    /** 尝试提交的工具调用次数，包含失败、超时及调用池拒绝。 */
+    private int toolCallCount;
+
     private List<AgentStep> steps = new ArrayList<>();
 
     private Instant createdAt;
@@ -39,5 +48,22 @@ public class AgentRun {
         AWAITING_APPROVAL,
         FAILED,
         CANCELLED
+    }
+
+    /** 描述产生最终结果或停止执行的具体原因。 */
+    public enum FinishReason {
+        FINAL_ANSWER,
+        MAX_MODEL_ROUNDS,
+        MAX_TOOL_CALLS,
+        MAX_TOOL_CALLS_PER_ROUND,
+        REPEATED_TOOL_CALL,
+        RUN_TIMEOUT,
+        MODEL_TIMEOUT,
+        TOOL_TIMEOUT,
+        CANCELLED,
+        APPROVAL_REQUIRED,
+        INVOCATION_REJECTED,
+        FINALIZATION_FAILED,
+        EXECUTION_ERROR
     }
 }

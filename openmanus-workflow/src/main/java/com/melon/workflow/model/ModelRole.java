@@ -1,0 +1,14 @@
+package com.melon.workflow.model;
+
+public enum ModelRole {
+    ANALYZER,
+    BRAINSTORM_STRUCTURE,
+    BRAINSTORM_STYLE,
+    BRAINSTORM_WORLD,
+    CREATIVE_DIRECTOR,
+    RESEARCH_PLANNER,
+    DRAFT_WRITER,
+    CRITIC,
+    FINAL_EDITOR,
+    QUALITY_REVIEWER
+}
