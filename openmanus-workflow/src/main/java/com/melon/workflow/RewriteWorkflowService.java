@@ -21,6 +21,10 @@ import com.melon.workflow.model.RewriteWorkflowState.ResearchPlanItem;
 import com.melon.workflow.model.RewriteWorkflowState.RewriteDirection;
 import com.melon.workflow.model.RewriteWorkflowState.WorkflowEvent;
 import com.melon.workflow.model.RewriteWorkflowState.WorkflowStatus;
+import com.melon.workflow.model.RewriteWorkflowState.StoryboardDraft;
+import com.melon.workflow.model.RewriteWorkflowState.StoryboardShot;
+import dev.langchain4j.data.image.Image;
+import dev.langchain4j.model.image.ImageModel;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
@@ -50,12 +54,14 @@ import static com.melon.workflow.RewriteWorkflowPrompts.QUALITY_REVIEW;
 import static com.melon.workflow.RewriteWorkflowPrompts.REVIEW_DRAFT;
 import static com.melon.workflow.RewriteWorkflowPrompts.SELECT_FINAL;
 import static com.melon.workflow.RewriteWorkflowPrompts.WRITE_DRAFT;
+import static com.melon.workflow.RewriteWorkflowPrompts.STORYBOARD_FORMAT;
 
 @Slf4j
 @Service
 public class RewriteWorkflowService {
 
     private final WorkflowModelGateway models;
+    private final WorkflowImageGateway images;
     private final McpResearchGateway researchGateway;
     private final RewriteWorkflowRepository repository;
     private final RewriteWorkflowProperties properties;
@@ -64,11 +70,13 @@ public class RewriteWorkflowService {
 
     /** 装配角色模型、资料研究、检查点存储和异步执行线程池。 */
     public RewriteWorkflowService(WorkflowModelGateway models,
+                                  WorkflowImageGateway images,
                                   McpResearchGateway researchGateway,
                                   RewriteWorkflowRepository repository,
                                   RewriteWorkflowProperties properties,
                                   @Qualifier("rewriteWorkflowExecutor") Executor executor) {
         this.models = models;
+        this.images = images;
         this.researchGateway = researchGateway;
         this.repository = repository;
         this.properties = properties;
@@ -77,10 +85,15 @@ public class RewriteWorkflowService {
 
     /** 校验改编请求，创建工作流状态并提交分析和方向规划。 */
     public RewriteWorkflowState start(RewriteWorkflowRequest request) {
+        return start(request, null);
+    }
+
+    public RewriteWorkflowState start(RewriteWorkflowRequest request, String conversationId) {
         validate(request);
 
         RewriteWorkflowState state = new RewriteWorkflowState();
         state.setWorkflowId(UUID.randomUUID().toString());
+        state.setConversationId(conversationId);
         state.setTitle(StringUtils.hasText(request.getTitle()) ? request.getTitle().trim() : "未命名改编");
         state.setSourceText(request.getSourceText().trim());
         state.setTargetAudience(request.getTargetAudience());
@@ -118,10 +131,41 @@ public class RewriteWorkflowService {
         return repository.findById(workflowId.trim());
     }
 
+    public Optional<RewriteWorkflowState> findById(String conversationId, String workflowId) {
+        return repository.findById(conversationId, workflowId);
+    }
+
     /** 校验选中的方向来自当前候选集合，并提交后续改编流程。 */
     public RewriteWorkflowState selectDirections(String workflowId, DirectionSelectionRequest request) {
-        RewriteWorkflowState state = repository.findById(workflowId)
+        return selectDirections(null, workflowId, request);
+    }
+
+    public RewriteWorkflowState selectDirections(String conversationId, String workflowId, DirectionSelectionRequest request) {
+        if (!activeWorkflows.add(workflowId)) {
+            throw new WorkflowExecutionException("工作流正在执行，请稍后重试");
+        }
+
+        boolean submitted = false;
+        try {
+            RewriteWorkflowState state = (conversationId == null ? repository.findById(workflowId)
+                    : repository.findById(conversationId, workflowId))
                 .orElseThrow(() -> new WorkflowExecutionException("工作流不存在: " + workflowId));
+            applyDirectionSelection(state, request);
+            repository.save(state);
+            try {
+                executor.execute(() -> executeAfterSelection(state));
+                submitted = true;
+            } catch (RuntimeException error) {
+                failWorkflow(state, error);
+                throw new WorkflowExecutionException("工作流恢复执行失败", error);
+            }
+            return state;
+        } finally {
+            if (!submitted) activeWorkflows.remove(workflowId);
+        }
+    }
+
+    private void applyDirectionSelection(RewriteWorkflowState state, DirectionSelectionRequest request) {
         if (state.getStatus() != WorkflowStatus.AWAITING_DIRECTION_SELECTION) {
             throw new WorkflowExecutionException("当前工作流不处于等待方向选择状态: " + state.getStatus());
         }
@@ -139,24 +183,11 @@ public class RewriteWorkflowService {
         if (selected.stream().anyMatch(java.util.Objects::isNull)) {
             throw new IllegalArgumentException("选择中包含不存在的改编方向");
         }
-        if (!activeWorkflows.add(workflowId)) {
-            throw new WorkflowExecutionException("工作流已经在继续执行，请勿重复提交");
-        }
-
         state.setSelectedDirections(new ArrayList<>(selected));
         state.setStatus(WorkflowStatus.RUNNING);
         state.setCurrentNode("USER_DIRECTION_SELECTION");
         addEvent(state, "USER_DIRECTION_SELECTION", "USER", "COMPLETED",
                 "用户选择了 " + selected.size() + " 个改编方向");
-        repository.save(state);
-        try {
-            executor.execute(() -> executeAfterSelection(state));
-        } catch (RuntimeException error) {
-            activeWorkflows.remove(workflowId);
-            failWorkflow(state, error);
-            throw new WorkflowExecutionException("工作流恢复执行失败", error);
-        }
-        return state;
     }
 
     /** 分析原文、生成并评估改编方向，然后保存等待用户选择的状态。 */
@@ -184,7 +215,6 @@ public class RewriteWorkflowService {
             state.setCurrentNode("AWAITING_DIRECTION_SELECTION");
             addEvent(state, "AWAITING_DIRECTION_SELECTION", "USER", "WAITING",
                     "等待用户选择 1 到 " + state.getMaxDirectionSelections() + " 个改编方向");
-            activeWorkflows.remove(state.getWorkflowId());
             repository.save(state);
         } catch (Throwable error) {
             failWorkflow(state, error);
@@ -220,15 +250,20 @@ public class RewriteWorkflowService {
             checkpoint(state, "FINAL_EDIT", ModelRole.FINAL_EDITOR, "COMPLETED", "终稿生成完成");
 
             qualityLoop(state);
+            generateStoryboardImages(state);
 
             state.setCompletedAt(Instant.now());
             state.setCurrentNode("FINISHED");
-            if (state.getQualityReport() != null && state.getQualityReport().isPassed()) {
+            boolean imagesFailed = state.getStoryboardShots().stream()
+                    .anyMatch(shot -> "FAILED".equals(shot.getImageStatus()));
+            if (state.getQualityReport() != null && state.getQualityReport().isPassed() && !imagesFailed) {
                 state.setStatus(WorkflowStatus.COMPLETED);
                 addEvent(state, "FINISHED", null, "COMPLETED", "终稿已通过质量门槛");
             } else {
                 state.setStatus(WorkflowStatus.NEEDS_REVIEW);
-                addEvent(state, "FINISHED", null, "NEEDS_REVIEW", "已达到最大重写轮次，需要人工审核");
+                addEvent(state, "FINISHED", null, "NEEDS_REVIEW", imagesFailed
+                        ? "分镜图未全部生成，已保留剧本及成功图片，需要人工审核"
+                        : "已达到最大重写轮次，需要人工审核");
             }
             repository.save(state);
         } catch (Throwable error) {
@@ -457,7 +492,7 @@ public class RewriteWorkflowService {
         input.put("targetAudience", state.getTargetAudience());
         input.put("constraints", state.getConstraints());
         addStyleContext(input, state);
-        state.setFinalDraft(models.text(ModelRole.FINAL_EDITOR, FINAL_EDIT, models.toJson(input)));
+        editFinalDraft(state, input);
         if (!StringUtils.hasText(state.getFinalDraft())) {
             throw new WorkflowExecutionException("终稿模型返回为空");
         }
@@ -498,9 +533,99 @@ public class RewriteWorkflowService {
             revisionInput.put("sourceLiteraryDna", state.getAnalysis().getLiteraryDna());
             revisionInput.put("constraints", state.getConstraints());
             addStyleContext(revisionInput, state);
-            state.setFinalDraft(models.text(ModelRole.FINAL_EDITOR, FINAL_EDIT, models.toJson(revisionInput)));
+            editFinalDraft(state, revisionInput);
             checkpoint(state, "REVISE_FINAL", ModelRole.FINAL_EDITOR, "COMPLETED", "终稿重写完成");
         }
+    }
+
+    /** 以同一份结构化分镜组装正文和图片任务，重写时同步替换，避免图文错位。 */
+    private void editFinalDraft(RewriteWorkflowState state, Map<String, Object> input) {
+        if (state.getOutputStyle() != RewriteOutputStyle.DRAMA_SCRIPT) {
+            state.setFinalDraft(models.text(ModelRole.FINAL_EDITOR, FINAL_EDIT, models.toJson(input)));
+            return;
+        }
+        StoryboardDraft draft = models.json(ModelRole.FINAL_EDITOR, FINAL_EDIT + "\n" + STORYBOARD_FORMAT,
+                models.toJson(input), StoryboardDraft.class);
+        if (draft == null || draft.getShots() == null || draft.getShots().isEmpty()) {
+            throw new WorkflowExecutionException("戏剧/剧本终稿未返回分镜头剧本");
+        }
+        StringBuilder text = new StringBuilder();
+        if (StringUtils.hasText(draft.getPreamble())) text.append(draft.getPreamble().trim()).append("\n\n");
+        List<StoryboardShot> shots = new ArrayList<>();
+        for (StoryboardShot source : draft.getShots()) {
+            if (source == null || !StringUtils.hasText(source.getScript())
+                    || !StringUtils.hasText(source.getImagePrompt())) {
+                throw new WorkflowExecutionException("分镜头缺少剧本文字或分镜图画面描述");
+            }
+            StoryboardShot shot = new StoryboardShot();
+            shot.setNumber(shots.size() + 1);
+            shot.setTitle(StringUtils.hasText(source.getTitle()) ? source.getTitle().trim() : "分镜 " + shot.getNumber());
+            shot.setScript(source.getScript().trim());
+            shot.setImagePrompt(source.getImagePrompt().trim());
+            shots.add(shot);
+            text.append("### 分镜 ").append(shot.getNumber()).append("：").append(shot.getTitle())
+                    .append("\n").append(shot.getScript()).append("\n\n");
+        }
+        state.setStoryboardShots(shots);
+        state.setFinalDraft(text.toString().trim());
+    }
+
+    /** 在最后一次质量审核/重写后为每段分镜单独出图；单张失败不丢失其余产物。 */
+    private void generateStoryboardImages(RewriteWorkflowState state) {
+        if (state.getOutputStyle() != RewriteOutputStyle.DRAMA_SCRIPT) return;
+        checkpoint(state, "STORYBOARD_IMAGES", ModelRole.FINAL_EDITOR, "STARTED", "开始逐段生成分镜图");
+        Optional<ImageModel> selected;
+        try {
+            selected = images.model(ModelRole.FINAL_EDITOR);
+        } catch (RuntimeException error) {
+            state.getStoryboardShots().forEach(shot -> {
+                shot.setImageStatus("FAILED");
+                shot.setImageError("分镜图模型配置无效，请检查 langchain4j.chat.image 或角色文生图配置");
+            });
+            checkpoint(state, "STORYBOARD_IMAGES", ModelRole.FINAL_EDITOR, "FAILED", "分镜图模型配置无效，已保留分镜头剧本");
+            return;
+        }
+        if (selected.isEmpty()) {
+            state.getStoryboardShots().forEach(shot -> shot.setImageStatus("SKIPPED"));
+            checkpoint(state, "STORYBOARD_IMAGES", ModelRole.FINAL_EDITOR, "SKIPPED",
+                    "未配置可用生图模型，已保留全部分镜头剧本");
+            return;
+        }
+        int failed = 0;
+        for (StoryboardShot shot : state.getStoryboardShots()) {
+            try {
+                var response = selected.get().generate("生成一张电影分镜图，仅表现一个镜头，不要拼图或添加文字。\n"
+                        + shot.getImagePrompt() + "\n分镜头剧本：\n" + shot.getScript());
+                shot.setImageUrl(imageUrl(response == null ? null : response.content()));
+                shot.setImageStatus("COMPLETED");
+            } catch (RuntimeException error) {
+                failed++;
+                shot.setImageStatus("FAILED");
+                shot.setImageError("分镜图生成失败，请检查图像服务状态及模型配置");
+                log.warn("工作流 {} 的第 {} 段分镜出图失败，errorType={}",
+                        state.getWorkflowId(), shot.getNumber(), error.getClass().getSimpleName());
+            }
+            checkpoint(state, "STORYBOARD_IMAGES", ModelRole.FINAL_EDITOR, shot.getImageStatus(),
+                    "分镜 " + shot.getNumber() + "/" + state.getStoryboardShots().size()
+                            + ("COMPLETED".equals(shot.getImageStatus()) ? " 图片生成完成" : " 图片生成失败"));
+        }
+        checkpoint(state, "STORYBOARD_IMAGES", ModelRole.FINAL_EDITOR, failed == 0 ? "COMPLETED" : "FAILED",
+                "分镜图生成结束：成功 " + (state.getStoryboardShots().size() - failed) + " 张，失败 " + failed + " 张");
+    }
+
+    private String imageUrl(Image image) {
+        if (image == null) throw new WorkflowExecutionException("图像服务返回空图片");
+        if (StringUtils.hasText(image.base64Data())) {
+            String mime = StringUtils.hasText(image.mimeType()) ? image.mimeType() : "image/png";
+            if (!Set.of("image/png", "image/jpeg", "image/webp").contains(mime)) {
+                throw new WorkflowExecutionException("图像服务返回不支持的图片格式");
+            }
+            return "data:" + mime + ";base64," + image.base64Data();
+        }
+        if (image.url() != null && Set.of("http", "https").contains(image.url().getScheme())) {
+            return image.url().toString();
+        }
+        throw new WorkflowExecutionException("图像服务未返回可用图片");
     }
 
     /** 按候选稿五项评审分数的平均值选择最高分候选。 */
@@ -549,6 +674,10 @@ public class RewriteWorkflowService {
         input.put("outputStyle", style.name());
         input.put("outputStyleDisplayName", style.displayName());
         input.put("outputStyleInstruction", style.instruction());
+        if (style == RewriteOutputStyle.DRAMA_SCRIPT) {
+            input.put("storyboardImageExecution", "分镜图由程序在终稿质量审核和重写后按模型实际文生图能力生成。"
+                    + "当前文字节点只编写或评审完整分镜头剧本，不生成虚构图片链接，也不因尚未出图扣分。");
+        }
     }
 
     /** 更新当前节点、记录事件并写入改编状态快照。 */

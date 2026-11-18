@@ -31,6 +31,9 @@ public class LangChain4jModelProperties {
 
         private OpenAiCompatibleProperties aihub = new OpenAiCompatibleProperties();
 
+        /** 独立的生图模型，供分镜出图使用，与聊天角色路由分开配置。 */
+        private ImageProperties image = new ImageProperties();
+
         /** 解析聊天供应商，显式配置优先于自动判断和默认值。 */
         public String resolvedProvider() {
             if (StringUtils.hasText(provider)) {
@@ -125,5 +128,27 @@ public class LangChain4jModelProperties {
         private Duration timeout = Duration.ofSeconds(60);
 
         private String name;
+
+        /** 文生图能力须显式启用，不能从视觉输入能力或模型名称推断。 */
+        private ImageGenerationProperties imageGeneration = new ImageGenerationProperties();
+    }
+
+    @Data
+    public static class ImageProperties {
+        private boolean enabled;
+        @lombok.ToString.Exclude
+        private String apiKey;
+        private String modelName;
+        private String baseUrl;
+        private Duration timeout = Duration.ofMinutes(10);
+    }
+
+    @Data
+    public static class ImageGenerationProperties {
+        private boolean enabled;
+        private String modelName;
+        /** 留空时复用当前供应商的 API 地址。 */
+        private String baseUrl;
+        private Duration timeout = Duration.ofMinutes(5);
     }
 }

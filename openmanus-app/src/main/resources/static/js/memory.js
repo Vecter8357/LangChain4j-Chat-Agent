@@ -8,7 +8,7 @@ window.createMemoryUI = function (hooks) {
         <div class="memory-actions"><button type="button" id="memory-new-task">新建任务</button><button type="button" id="memory-task-progress">更新进展</button></div>
         <label for="memory-conversation">会话</label><select id="memory-conversation"></select>
         <div class="memory-actions"><button type="button" id="memory-new-conversation">新会话</button><button type="button" id="memory-delete-conversation">删除会话</button></div>
-        <small>普通问答自动承接历史；改编工具仍按独立工作流运行。</small>
+        <small>打开会话可查看问答历史和改编结果。</small>
         <details><summary>管理长期 / 项目 / 任务记忆</summary>
             <label for="memory-scope">记录范围</label><select id="memory-scope"><option value="LONG_TERM">长期记忆</option><option value="PROJECT">项目记忆</option><option value="TASK">任务记忆</option></select>
             <label for="memory-content">明确要记住的内容</label><textarea id="memory-content" maxlength="4000" placeholder="例如：偏好文学散文，避免档案或报告格式。"></textarea>
@@ -30,6 +30,31 @@ window.createMemoryUI = function (hooks) {
     }
     function project() { return $('project').value || null; }
     function task() { return $('task').value || null; }
+    function projectQuery() {
+        const query = new URLSearchParams();
+        if (project()) query.set('projectId', project());
+        return query;
+    }
+    function renderConversations() {
+        choose($('conversation'), conversations.map(item => {
+            const title = tasks.find(candidate => candidate.id === item.taskId)?.title;
+            return {...item, title: title ? `${title} · ${item.title}` : item.title};
+        }), '新会话（发送时创建）');
+        $('conversation').value = conversationId || '';
+    }
+    function resetConversation() {
+        conversationId = null;
+        $('conversation').value = '';
+        hooks.clear();
+    }
+    async function refreshConversations() {
+        const query = projectQuery();
+        if (task()) query.set('taskId', task());
+        conversations = [];
+        renderConversations();
+        conversations = await api('/conversations?' + query);
+        renderConversations();
+    }
     function scope() {
         const kind = $('scope').value;
         const id = kind === 'LONG_TERM' ? 'local' : kind === 'PROJECT' ? project() : task();
@@ -70,34 +95,48 @@ window.createMemoryUI = function (hooks) {
         if (!conversationId) return;
         const selected = conversations.find(c => c.id === conversationId);
         if (selected) $('task').value = selected.taskId || '';
-        const messages = await api('/conversations/' + conversationId + '/messages');
-        messages.forEach(message => hooks.message(message.role, message.content));
-        notice(messages.length === 50 ? '已加载最近 50 条消息；更早消息保存在服务器。' : '会话历史已加载。');
+        const basePath = '/conversations/' + encodeURIComponent(conversationId);
+        const [messages, workflows] = await Promise.allSettled([
+            api(basePath + '/messages'), api(basePath + '/rewrite-workflows')
+        ]);
+        await hooks.history(conversationId, messages.value || [], workflows.value || []);
+        if (messages.status === 'rejected') throw messages.reason;
+        if (workflows.status === 'rejected') throw workflows.reason;
+        notice(messages.value.length === 50 ? '已加载最近 50 条消息；更早消息保存在服务器。' : '会话历史已加载。');
     }
     async function refreshProject() {
-        const suffix = project() ? '?projectId=' + encodeURIComponent(project()) : '';
-        [tasks, conversations] = await Promise.all([api('/tasks' + suffix), api('/conversations' + suffix)]);
+        tasks = [];
+        conversations = [];
         choose($('task'), tasks, '不关联任务');
-        choose($('conversation'), conversations, '新会话（发送时创建）');
-        conversationId = null; hooks.clear(); await entries();
+        renderConversations();
+        const query = projectQuery();
+        [tasks, conversations] = await Promise.all([api('/tasks?' + query), api('/conversations?' + query)]);
+        choose($('task'), tasks, '不关联任务');
+        renderConversations();
+        await entries();
     }
     async function guarded(action) {
         if (operation || hooks.busy()) { notice('请等待当前操作或回答完成。'); return; }
         operation = true; panel.querySelectorAll('button,select').forEach(el => el.disabled = true);
         try { await action(); } catch (error) { notice(error.message); }
-        finally { operation = false; panel.querySelectorAll('button,select').forEach(el => el.disabled = false); }
+        finally { operation = false; panel.querySelectorAll('button,select').forEach(el => el.disabled = hooks.busy()); }
     }
     $('new-project').onclick = () => guarded(async () => {
         const name = window.prompt('项目名称'); if (!name?.trim()) return;
         const created = await api('/projects', 'POST', {name});
-        choose($('project'), await api('/projects'), '不关联项目'); $('project').value = created.id; await refreshProject();
+        choose($('project'), await api('/projects'), '不关联项目');
+        $('project').value = created.id;
+        resetConversation();
+        await refreshProject();
     });
     $('new-task').onclick = () => guarded(async () => {
         const title = window.prompt('任务名称'); if (!title?.trim()) return;
         const created = await api('/tasks', 'POST', {projectId: project(), title});
-        tasks = await api('/tasks' + (project() ? '?projectId=' + encodeURIComponent(project()) : ''));
+        tasks = await api('/tasks?' + projectQuery());
         choose($('task'), tasks, '不关联任务'); $('task').value = created.id;
-        $('conversation').value = ''; conversationId = null; hooks.clear(); await entries();
+        resetConversation();
+        await refreshConversations();
+        await entries();
     });
     $('task-progress').onclick = () => guarded(async () => {
         const selected = tasks.find(item => item.id === task()); if (!selected) throw new Error('请先选择任务。');
@@ -106,13 +145,17 @@ window.createMemoryUI = function (hooks) {
         const updated = await api('/tasks/' + selected.id, 'PATCH', {status, progress});
         tasks = tasks.map(item => item.id === updated.id ? updated : item); notice('任务状态与进展已保存。');
     });
-    $('new-conversation').onclick = () => guarded(async () => {conversationId = null; $('conversation').value = ''; hooks.clear(); notice('发送消息后创建新会话。');});
+    $('new-conversation').onclick = () => guarded(async () => {resetConversation(); notice('发送消息后创建新会话。');});
     $('delete-conversation').onclick = () => guarded(async () => {
-        if (!conversationId || !window.confirm('删除当前会话和消息历史？显式保存的记忆会保留。')) return;
-        await api('/conversations/' + conversationId, 'DELETE'); await refreshProject(); notice('会话已删除。');
+        if (!conversationId || !window.confirm('删除当前会话及其问答和改编记录？显式保存的记忆会保留。')) return;
+        await api('/conversations/' + conversationId, 'DELETE');
+        resetConversation();
+        await refreshConversations();
+        await entries();
+        notice('会话已删除。');
     });
-    $('project').onchange = () => guarded(refreshProject);
-    $('task').onchange = () => guarded(async () => {conversationId = null; $('conversation').value = ''; hooks.clear(); await entries();});
+    $('project').onchange = () => guarded(async () => {resetConversation(); await refreshProject();});
+    $('task').onchange = () => guarded(async () => {resetConversation(); await refreshConversations(); await entries();});
     $('conversation').onchange = () => guarded(async () => {await loadConversation(); await entries();});
     $('scope').onchange = () => guarded(entries);
     $('refresh').onclick = () => guarded(entries);
@@ -128,9 +171,11 @@ window.createMemoryUI = function (hooks) {
             await ready;
             if (operation) throw new Error('记忆面板正在操作，请稍后重试。');
             if (conversationId) return conversationId;
-            const created = await api('/conversations', 'POST', {projectId: project(), taskId: task(), title: title.slice(0, 80)});
-            conversations.unshift(created); $('conversation').appendChild(new Option(created.title, created.id));
-            $('conversation').value = created.id; conversationId = created.id; return conversationId;
+            const created = await api('/conversations', 'POST', {projectId: project(), taskId: task(), title: Array.from(title).slice(0, 80).join('')});
+            conversations.unshift(created);
+            conversationId = created.id;
+            renderConversations();
+            return conversationId;
         }
     };
 };

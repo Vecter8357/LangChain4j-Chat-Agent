@@ -163,10 +163,53 @@ Invoke-RestMethod `
 | `PRESERVE_ORIGINAL_GENRE` | 保持原文体裁 | 保持分析节点识别出的原始体裁 |
 | `EXPERIMENTAL` | 文体实验 | 允许明显的结构与文体实验 |
 | `FICTION` | 小说化改编 | 使用场景、行动、对话和完整叙事弧线 |
-| `DRAMA_SCRIPT` | 戏剧/剧本 | 使用场景、角色、动作和对白 |
+| `DRAMA_SCRIPT` | 戏剧/剧本 | 完整分镜头剧本；使用配置的生图模型为每段分镜生成一张图 |
 | `DOSSIER_EPISTOLARY` | 档案或书信体 | 使用档案、报告、书信或日记推进叙事 |
 
 工作流会把输出风格作为硬约束传递给头脑风暴、方向评估、候选稿、终稿和质量审核。终稿只有在综合分与 `genreComplianceScore` 均达到质量阈值时才会进入 `COMPLETED`。
+
+戏剧/剧本的终稿包含场景、内外景、景别、画面内容、道具服装、构图、对白/人声、音乐音效、摄法、时长、特效与转场。`storyboardShots` 按剧情顺序保存每段分镜的 `number`、`title`、`script`、`imagePrompt`、`imageUrl`、`imageStatus` 和 `imageError`，页面逐段展示剧本及图片。出图仅在质量审核和重写全部结束后执行。
+
+分镜出图优先使用独立的 `langchain4j.chat.image` 配置，与聊天角色的模型选择分开。当前项目默认启用 `codex/gpt-image-2`，通过 OpenAI 兼容的 `/images/generations` 接口调用。未设置 `IMAGE_API_KEY` 和 `IMAGE_BASE_URL` 时沿用配置文件中已有的网关凭据与地址回退：
+
+```yaml
+langchain4j:
+  chat:
+    image:
+      enabled: ${IMAGE_GENERATION_ENABLED:true}
+      api-key: ${IMAGE_API_KEY:${LINSHICHE_API_KEY:cc-switch}}
+      model-name: ${IMAGE_MODEL_NAME:codex/gpt-image-2}
+      base-url: ${IMAGE_BASE_URL:${ZHIPU_BASE_URL:http://127.0.0.1:3425/v1}}
+      timeout: ${IMAGE_TIMEOUT:600s}
+```
+
+选择“颠覆性改编 → 戏剧/剧本”后，终稿审核与重写结束才开始出图，每段分镜单独调用一次并保存结果。页面显示每段剧本、对应图片及出图进度；单张失败不会中止其余分镜。模型 API 返回的 Base64 图片或 HTTP/HTTPS 图片地址均可展示。
+
+关闭独立生图配置（`IMAGE_GENERATION_ENABLED=false`）后，仍兼容既有的角色供应商文生图配置。例如，终稿使用 `openai` 供应商时：
+
+```yaml
+langchain4j:
+  chat:
+    openai:
+      image-generation:
+        enabled: true
+        model-name: ${OPENAI_IMAGE_MODEL} # 填写当前服务实际支持的文生图模型
+        # base-url: https://your-service.example/v1 # 留空复用聊天供应商地址
+        timeout: 300s
+rewrite-workflow:
+  provider-by-role:
+    FINAL_EDITOR: openai
+```
+
+兼容配置支持 `openai`、`zhipu`、`aihub` 的图片生成接口，复用对应供应商 API Key。使用命名 `ChatModel` Bean 时，通过 `rewrite-workflow.image-model-by-chat-model: {自定义聊天Bean名: 自定义ImageModelBean名}` 显式关联图片模型；未关联时不会回退到其他供应商。独立模型和兼容路由均未配置时，分镜标记为 `SKIPPED` 并保留文字。单张失败标记为 `FAILED`，其余分镜继续出图，成功图片和剧本均保留，最终状态为 `NEEDS_REVIEW`。
+
+可用以下命令单独验证工作流出图链路：
+
+```shell
+mvn -pl openmanus-workflow -am -Drewrite.image.live-test=true -Dtest=StoryboardWorkflowTest#generatesActualImagesForBothShotsUsingTheProjectConfiguration -Dsurefire.failIfNoSpecifiedTests=false test
+```
+
+此测试读取项目配置并实际生成两张分镜图，将图片和工作流结果 JSON 保存到 `data/image-probe/workflow`。分析、写稿和存储使用测试替身；普通测试默认跳过真实模型调用。
 
 ### 为不同角色配置不同模型
 

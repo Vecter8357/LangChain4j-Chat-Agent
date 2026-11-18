@@ -76,6 +76,13 @@ public class MemoryRepository {
     public List<Conversation> conversations(String projectId) {
         return jdbc.query("SELECT * FROM la4j_mem_conversation WHERE project_id <=> ? ORDER BY updated_at DESC LIMIT 100",CONVERSATION,projectId);
     }
+    /** 按项目和任务查询，确保其他任务的会话不会占用当前任务的历史列表。 */
+    public List<Conversation> conversations(String projectId, String taskId) {
+        return jdbc.query("""
+                SELECT * FROM la4j_mem_conversation WHERE project_id <=> ? AND task_id=?
+                ORDER BY updated_at DESC LIMIT 100
+                """, CONVERSATION, projectId, taskId);
+    }
     /** 同一会话仅允许一个有效执行；过期租约可重试，过期执行不能落盘答案。 */
     public String claim(String id) {
         return claim(id,MemoryEvidenceScope.key(List.of(),List.of()));

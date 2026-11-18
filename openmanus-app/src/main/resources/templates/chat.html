@@ -191,7 +191,7 @@
                     fileUpload.value = '';
                     updateUploadedFilesList();updateFileTags();
                 },
-                message: (role, text) => addMessage(role === 'user' ? 'human' : 'ai', text)
+                history: renderConversationHistory
             });
 
             const agentToolConfig = {
@@ -216,7 +216,8 @@
                 PRESERVE_ORIGINAL_GENRE: '保持模型识别出的原文体裁，只改变视角、人物关系、情节或结局。',
                 EXPERIMENTAL: '允许明显的结构与文体实验，同时保持完整性和可读性。',
                 FICTION: '使用场景、行动、对话与冲突，形成完整的小说叙事。',
-                DRAMA_SCRIPT: '使用场景、角色、动作和对白构成戏剧或影视剧本。',
+                DRAMA_SCRIPT: '生成完整分镜头剧本，使用配置的生图模型为每段分镜生成一张分镜图。分镜场景图要求：根据分镜剧本生成电影级写实多宫格故事板，宫格数量自适应，" +\n' +
+                    '            "按时间顺序展示连续镜头，统一人物场景，标注时间、景别及动作',
                 DOSSIER_EPISTOLARY: '使用档案、报告、书信、日记或材料汇编推进叙事。'
             };
 
@@ -545,19 +546,9 @@
                     return;
                 }
                 
-                // 显示用户消息
-                addMessage('human', input);
-                
-                // 清空输入框，但保持文件标签
-                chatInput.value = '';
-                chatInput.style.height = 'auto';
-                
-                // 显示加载中
                 const typingIndicator = document.createElement('div');
                 typingIndicator.className = 'typing-indicator';
                 typingIndicator.innerHTML = '<div class="typing-dot"></div><div class="typing-dot"></div><div class="typing-dot"></div>';
-                chatMessages.appendChild(typingIndicator);
-                scrollToBottom();
                 
                 try {
                     // 禁用发送按钮（变为取消状态）
@@ -569,14 +560,21 @@
                     memoryUI.setBusy(true);
                     knowledgeBases.disabled = true;
 
+                    const conversationId = await memoryUI.ensureConversation(input);
+                    addMessage('human', input);
+                    chatInput.value = '';
+                    chatInput.style.height = 'auto';
+                    chatMessages.appendChild(typingIndicator);
+                    scrollToBottom();
+
                     if (activeAgentTool === 'rewrite') {
-                        await processRewriteWorkflow(input, typingIndicator, controller.signal);
+                        await processRewriteWorkflow(conversationId, input, typingIndicator, controller.signal);
                         return;
                     }
                     
                     // 构建包含上传文件ID的请求
                     const requestBody = {
-                        conversationId: await memoryUI.ensureConversation(input),
+                        conversationId,
                         input: input,
                         fileIds: uploadedFiles.map(file => file.id),
                         knowledgeBaseIds: Array.from(knowledgeBases.selectedOptions).map(option => option.value)
@@ -697,14 +695,72 @@
                     uploadButton.disabled = false;
                     
                     // 如果有加载指示器，移除它
-                    if (document.querySelector('.typing-indicator')) {
-                        chatMessages.removeChild(document.querySelector('.typing-indicator'));
-                    }
+                    typingIndicator.remove();
                 }
             });
 
-            async function processRewriteWorkflow(sourceText, typingIndicator, signal) {
-                const response = await fetch('/api/rewrite-workflows', {
+            function rewriteWorkflowPath(conversationId) {
+                return '/api/memory/conversations/' + encodeURIComponent(conversationId) + '/rewrite-workflows';
+            }
+
+            function renderConversationHistory(conversationId, messages, workflows) {
+                const latestWorkflow = workflows[workflows.length - 1];
+                const timeline = [...messages, ...workflows].sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt));
+                timeline.forEach(item => {
+                    if (item.workflowId) {
+                        const endpoint = rewriteWorkflowPath(conversationId) + '/' + encodeURIComponent(item.workflowId);
+                        renderWorkflowHistory(item, endpoint, item === latestWorkflow);
+                    } else {
+                        addMessage(item.role === 'user' ? 'human' : 'ai', item.content);
+                    }
+                });
+                scrollToBottom();
+            }
+
+            function renderWorkflowHistory(run, endpoint, open) {
+                const details = document.createElement('details');
+                details.className = 'workflow-final';
+                const summary = document.createElement('summary');
+                summary.textContent = '颠覆性改编 · ' + run.preview;
+                const content = document.createElement('div');
+                details.append(summary, content);
+                chatMessages.appendChild(details);
+
+                const load = async () => {
+                    content.textContent = '正在加载改编记录…';
+                    try {
+                        const response = await fetch(endpoint);
+                        if (!response.ok) throw new Error(await readErrorMessage(response));
+                        const state = await response.json();
+                        if (!details.isConnected) return;
+                        content.replaceChildren();
+                        addMessage('human', state.sourceText, content);
+                        const view = createWorkflowMessage(run.workflowId, endpoint, content);
+                        renderWorkflowState(view, state, false);
+                        if (state.status === 'QUEUED' || state.status === 'RUNNING') {
+                            addRefreshButton('刷新改编进度');
+                        }
+                    } catch (error) {
+                        content.textContent = '读取改编记录失败。';
+                        addRefreshButton('重试');
+                    }
+                };
+                const addRefreshButton = label => {
+                    const button = document.createElement('button');
+                    button.type = 'button';
+                    button.textContent = label;
+                    button.addEventListener('click', load);
+                    content.appendChild(button);
+                };
+                details.addEventListener('toggle', () => {
+                    if (details.open && !content.hasChildNodes()) load();
+                });
+                details.open = open;
+            }
+
+            async function processRewriteWorkflow(conversationId, sourceText, typingIndicator, signal) {
+                const path = rewriteWorkflowPath(conversationId);
+                const response = await fetch(path, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
@@ -728,11 +784,11 @@
                 if (typingIndicator.isConnected) {
                     typingIndicator.remove();
                 }
-                const workflowView = createWorkflowMessage(started.workflowId);
-                await pollRewriteWorkflow(started.workflowId, workflowView, signal);
+                const workflowView = createWorkflowMessage(started.workflowId, path + '/' + encodeURIComponent(started.workflowId));
+                await pollRewriteWorkflow(workflowView, signal);
             }
 
-            async function pollRewriteWorkflow(workflowId, workflowView, signal) {
+            async function pollRewriteWorkflow(workflowView, signal) {
                 const pauseStatuses = new Set([
                     'AWAITING_DIRECTION_SELECTION',
                     'COMPLETED',
@@ -742,7 +798,7 @@
                 let attempts = 0;
 
                 while (attempts++ < 900) {
-                    const statusResponse = await fetch(`/api/rewrite-workflows/${workflowId}`, {
+                    const statusResponse = await fetch(workflowView.endpoint, {
                         signal: signal
                     });
                     if (!statusResponse.ok) {
@@ -755,10 +811,10 @@
                     }
                     await waitForNextPoll(2000, signal);
                 }
-                throw new Error('工作流执行时间过长，请稍后使用 workflowId 查询结果：' + workflowId);
+                throw new Error('工作流仍在执行，可从会话历史刷新进度。');
             }
 
-            function createWorkflowMessage(workflowId) {
+            function createWorkflowMessage(workflowId, endpoint, container = chatMessages) {
                 const messageDiv = document.createElement('div');
                 messageDiv.className = 'message ai workflow-message';
 
@@ -808,13 +864,13 @@
                 card.append(heading, id, style, node, progressTrack, events, result);
                 messageContent.append(badge, card);
                 messageDiv.appendChild(messageContent);
-                chatMessages.appendChild(messageDiv);
-                scrollToBottom();
+                container.appendChild(messageDiv);
+                if (container === chatMessages) scrollToBottom();
 
-                return { status, style, node, progressBar, events, result };
+                return { endpoint, status, style, node, progressBar, events, result };
             }
 
-            function renderWorkflowState(view, state) {
+            function renderWorkflowState(view, state, scroll = true) {
                 const nodeLabels = {
                     QUEUED: '等待执行',
                     ANALYZE: '分析原文文学结构',
@@ -830,6 +886,7 @@
                     FINAL_EDIT: '生成终稿',
                     QUALITY_REVIEW: '终稿质量审核',
                     REVISE_FINAL: '根据审核意见重写',
+                    STORYBOARD_IMAGES: '逐段生成分镜图',
                     FINISHED: '工作流完成'
                 };
                 const progressByNode = {
@@ -847,6 +904,7 @@
                     FINAL_EDIT: 86,
                     QUALITY_REVIEW: 94,
                     REVISE_FINAL: 90,
+                    STORYBOARD_IMAGES: 97,
                     FINISHED: 100
                 };
                 const statusLabels = {
@@ -921,7 +979,50 @@
                     failure.textContent = state.failureReason || '工作流执行失败';
                     view.result.appendChild(failure);
                 }
-                scrollToBottom();
+                renderStoryboardShots(view.result, state.storyboardShots || []);
+                if (scroll) scrollToBottom();
+            }
+
+            function renderStoryboardShots(container, shots) {
+                if (!shots.length) return;
+                const panel = document.createElement('section');
+                panel.className = 'workflow-storyboards';
+                const heading = document.createElement('strong');
+                heading.textContent = '分镜头剧本与分镜图';
+                panel.appendChild(heading);
+                shots.forEach(shot => {
+                    const card = document.createElement('article');
+                    card.className = 'workflow-storyboard';
+                    const title = document.createElement('h4');
+                    title.textContent = `分镜 ${shot.number}：${shot.title || ''}`;
+                    const script = document.createElement('div');
+                    script.className = 'workflow-final-text';
+                    script.textContent = shot.script || '';
+                    card.append(title, script);
+                    const validImage = typeof shot.imageUrl === 'string' &&
+                        (/^https?:\/\//i.test(shot.imageUrl) || /^data:image\/(png|jpeg|webp);base64,/i.test(shot.imageUrl));
+                    if (shot.imageStatus === 'COMPLETED' && validImage) {
+                        const img = document.createElement('img');
+                        img.src = shot.imageUrl;
+                        img.alt = `分镜 ${shot.number}：${shot.title || '分镜图'}`;
+                        img.loading = 'lazy';
+                        img.referrerPolicy = 'no-referrer';
+                        card.appendChild(img);
+                    } else {
+                        const status = document.createElement('p');
+                        status.className = 'workflow-storyboard-status';
+                        status.textContent = shot.imageStatus === 'SKIPPED'
+                            ? '未配置可用生图模型，已保留分镜头剧本。'
+                            : shot.imageStatus === 'FAILED'
+                                ? shot.imageError || '分镜图生成失败。'
+                                : shot.imageStatus === 'COMPLETED'
+                                    ? '暂无可用分镜图，已保留分镜头剧本。'
+                                    : '等待生成分镜图…';
+                        card.appendChild(status);
+                    }
+                    panel.appendChild(card);
+                });
+                container.appendChild(panel);
             }
 
             function renderDirectionSelection(view, state) {
@@ -1013,7 +1114,7 @@
                         return;
                     }
                     validation.textContent = '';
-                    await resumeRewriteWorkflow(state.workflowId, directionIds, view, panel);
+                    await resumeRewriteWorkflow(directionIds, view, panel);
                 });
 
                 panel.append(heading, grid, validation, continueButton);
@@ -1027,7 +1128,7 @@
                 return badge;
             }
 
-            async function resumeRewriteWorkflow(workflowId, directionIds, view, panel) {
+            async function resumeRewriteWorkflow(directionIds, view, panel) {
                 if (controller) {
                     const validation = panel.querySelector('.direction-validation');
                     validation.textContent = '当前有其他请求正在处理，请稍后再试';
@@ -1035,12 +1136,13 @@
                 }
 
                 controller = new AbortController();
+                memoryUI.setBusy(true);
                 const controls = panel.querySelectorAll('input, button');
                 controls.forEach(control => control.disabled = true);
                 sendButton.disabled = true;
                 uploadButton.disabled = true;
                 try {
-                    const response = await fetch(`/api/rewrite-workflows/${workflowId}/directions`, {
+                    const response = await fetch(view.endpoint + '/directions', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ directionIds }),
@@ -1050,7 +1152,7 @@
                         throw new Error(await readErrorMessage(response));
                     }
                     view.result.innerHTML = '<div class="workflow-resume-notice">已提交选择，继续执行后续创作…</div>';
-                    await pollRewriteWorkflow(workflowId, view, controller.signal);
+                    await pollRewriteWorkflow(view, controller.signal);
                 } catch (error) {
                     if (error.name !== 'AbortError') {
                         const failure = document.createElement('div');
@@ -1061,6 +1163,7 @@
                     }
                 } finally {
                     controller = null;
+                    memoryUI.setBusy(false);
                     sendButton.disabled = false;
                     uploadButton.disabled = uploadedFiles.length >= MAX_FILES;
                 }
@@ -1306,7 +1409,7 @@
             }
             
             // 添加消息到聊天区域
-            function addMessage(type, content) {
+            function addMessage(type, content, container = chatMessages) {
                 const messageDiv = document.createElement('div');
                 messageDiv.className = `message ${type}`;
                 
@@ -1323,9 +1426,9 @@
                 }
                 
                 messageDiv.appendChild(messageContent);
-                chatMessages.appendChild(messageDiv);
+                container.appendChild(messageDiv);
                 
-                scrollToBottom();
+                if (container === chatMessages) scrollToBottom();
             }
             
             // 滚动到底部

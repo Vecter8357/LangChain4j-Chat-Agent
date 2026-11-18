@@ -36,7 +36,7 @@ class RewriteWorkflowServiceTest {
         AtomicReference<Runnable> scheduled = new AtomicReference<>();
         Executor executor = scheduled::set;
         RewriteWorkflowService service = new RewriteWorkflowService(
-                models, researchGateway, repository, properties, executor);
+                models, mock(WorkflowImageGateway.class), researchGateway, repository, properties, executor);
 
         RewriteDirection first = direction("structure-1", "倒叙真相");
         RewriteDirection second = direction("style-1", "多声部叙事");
@@ -68,7 +68,7 @@ class RewriteWorkflowServiceTest {
                 new HttpTimeoutException("request timed out"));
         when(models.json(eq(ModelRole.ANALYZER), anyString(), anyString(), eq(ProseAnalysis.class)))
                 .thenThrow(timeout);
-        var service = new RewriteWorkflowService(models, mock(McpResearchGateway.class),
+        var service = new RewriteWorkflowService(models, mock(WorkflowImageGateway.class), mock(McpResearchGateway.class),
                 mock(RewriteWorkflowRepository.class), new RewriteWorkflowProperties(), Runnable::run);
         var request = new RewriteWorkflowRequest();
         request.setSourceText("用于验证失败状态的测试原文");

@@ -19,14 +19,22 @@ public class RewriteWorkflowRepository {
     private final StringRedisTemplate redisTemplate;
     private final ObjectMapper objectMapper;
     private final RewriteWorkflowProperties properties;
+    private final Optional<ConversationStore> conversationStore;
+
+    public interface ConversationStore {
+        void save(RewriteWorkflowState state);
+        Optional<RewriteWorkflowState> findById(String conversationId, String workflowId);
+    }
 
     /** 装配用于持久化改编检查点的 Redis 模板与 JSON 映射器。 */
     public RewriteWorkflowRepository(StringRedisTemplate redisTemplate,
                                      ObjectMapper objectMapper,
-                                     RewriteWorkflowProperties properties) {
+                                     RewriteWorkflowProperties properties,
+                                     Optional<ConversationStore> conversationStore) {
         this.redisTemplate = redisTemplate;
         this.objectMapper = objectMapper;
         this.properties = properties;
+        this.conversationStore = conversationStore;
     }
 
     /** 按持久化配置保存带有效期的改编状态快照。 */
@@ -34,6 +42,10 @@ public class RewriteWorkflowRepository {
         state.setUpdatedAt(Instant.now());
         state.setPersisted(true);
         state.setPersistenceError(null);
+        if (state.getConversationId() != null) {
+            conversationStore.orElseThrow().save(state);
+            return;
+        }
         try {
             String value = objectMapper.writeValueAsString(state);
             redisTemplate.opsForValue().set(
@@ -65,6 +77,10 @@ public class RewriteWorkflowRepository {
         } catch (Exception e) {
             throw new WorkflowExecutionException("读取工作流状态失败: " + workflowId, e);
         }
+    }
+
+    public Optional<RewriteWorkflowState> findById(String conversationId, String workflowId) {
+        return conversationStore.orElseThrow().findById(conversationId, workflowId);
     }
 
     /** 将配置的 Redis 键前缀和改编工作流 ID 拼接为存储键。 */

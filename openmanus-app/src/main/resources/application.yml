@@ -150,6 +150,11 @@ langchain4j:
       model-name: ${AIHUB_MODEL_NAME:deepseek-v4-pro}
       temperature: 0.0
       timeout: ${AIHUB_TIMEOUT:600s}
+      image-generation:
+        enabled: ${AIHUB_IMAGE_GENERATION_ENABLED:false}
+        model-name: ${AIHUB_IMAGE_MODEL:}
+        base-url: ${AIHUB_IMAGE_BASE_URL:}
+        timeout: ${AIHUB_IMAGE_TIMEOUT:300s}
     ollama:
       base-url: ${OLLAMA_BASE_URL:http://localhost:11434}
       model-name: ${OLLAMA_CHAT_MODEL:qwen2.5:7b}
@@ -162,14 +167,31 @@ langchain4j:
       max-tokens: 4096
       base-url: ${OPENAI_BASE_URL:https://openrouter.ai/api/v1}
       timeout: ${OPENAI_TIMEOUT:600s}
+      image-generation:
+        enabled: ${OPENAI_IMAGE_GENERATION_ENABLED:false}
+        model-name: ${OPENAI_IMAGE_MODEL:}
+        base-url: ${OPENAI_IMAGE_BASE_URL:}
+        timeout: ${OPENAI_IMAGE_TIMEOUT:300s}
     zhipu:
       # OpenAI-compatible gateway; include /v1 in the API base URL.
-      api-key: ${LINSHICHE_API_KEY:cc-switch}
+      api-key: ${LINSHICHE_API_KEY:magpie}
       model-name: ${ZHIPU_MODEL_NAME:codex/gpt-6.1-sol}
       temperature: 0.0
       max-tokens: 4096
       base-url: ${ZHIPU_BASE_URL:http://127.0.0.1:3425/v1}
       timeout: ${ZHIPU_TIMEOUT:600s}
+      image-generation:
+        enabled: ${ZHIPU_IMAGE_GENERATION_ENABLED:false}
+        model-name: ${ZHIPU_IMAGE_MODEL:}
+        base-url: ${ZHIPU_IMAGE_BASE_URL:}
+        timeout: ${ZHIPU_IMAGE_TIMEOUT:300s}
+    image:
+      # 分镜图优先使用独立生图模型；分析、写稿和审核仍使用各自的聊天模型。
+      enabled: ${IMAGE_GENERATION_ENABLED:true}
+      api-key: ${IMAGE_API_KEY:${LINSHICHE_API_KEY:gpt-image}}
+      model-name: ${IMAGE_MODEL_NAME:codex/gpt-image-2}
+      base-url: ${IMAGE_BASE_URL:${ZHIPU_BASE_URL:http://127.0.0.1:3425/v1}}
+      timeout: ${IMAGE_TIMEOUT:600s}
   embedding:
     provider: ${EMBEDDING_PROVIDER:siliconflow}
     siliconflow:
@@ -206,6 +228,8 @@ rewrite-workflow:
   model-by-role: {}
   # 也可直接将角色映射到 langchain4j.chat 下的 provider 配置。
   provider-by-role: {}
+  # 自定义聊天 Bean 可显式关联 ImageModel Bean，声明其文生图能力。
+  image-model-by-chat-model: {}
 
 dag-workflow:
   enabled: ${DAG_WORKFLOW_ENABLED:true}

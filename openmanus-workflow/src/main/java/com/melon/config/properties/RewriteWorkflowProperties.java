@@ -48,6 +48,9 @@ public class RewriteWorkflowProperties {
      */
     private Map<ModelRole, String> providerByRole = new EnumMap<>(ModelRole.class);
 
+    /** 未启用独立 image 模型时，自定义 ChatModel Bean 可通过此映射关联 ImageModel Bean。 */
+    private Map<String, String> imageModelByChatModel = new HashMap<>();
+
     @Data
     public static class Persistence {
 

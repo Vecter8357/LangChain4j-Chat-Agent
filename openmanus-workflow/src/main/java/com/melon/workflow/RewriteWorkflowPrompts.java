@@ -2,6 +2,22 @@ package com.melon.workflow;
 
 public final class RewriteWorkflowPrompts {
 
+    public static final String STORYBOARD_FORMAT = """
+            当前输出为戏剧/剧本。将完整终稿组织为分镜头剧本，只返回 JSON：
+            {"preamble":"剧名、角色设定及必要的剧本说明", "shots":[
+              {"title":"镜头标题", "script":"这一段分镜的完整剧本文字",
+               "imagePrompt":"用于生成这一镜头单张分镜图的完整画面描述"}
+            ]}。
+            shots 必须为非空数组，按剧情顺序一段分镜对应一个元素，不能遗漏、合并不同镜头。
+            script 必须包含场景信息、内外景、景别、画面内容、道具与服装、构图、对白/人声、
+            音乐音效、摄法/技巧、镜头时长、特技特效及转场。没有的项目标注“无”。
+            imagePrompt 必须根据分镜剧本生成电影级写实多宫格故事板，宫格数量自适应，按时间顺序展示连续镜头
+            ，包含人物外观、服装、场景、动作、构图、
+            光线和景别；在所有镜头中保持人物外观、服装、道具与美术风格一致。
+            不得输出虚构的图片 URL、Markdown 图片链接或声称图片已经生成。
+            不输出 number、imageUrl、imageStatus、imageError，这些字段由程序管理。
+            """;
+
     /** 将改编流程使用的提示词集中保留为静态常量。 */
     private RewriteWorkflowPrompts() {
     }
@@ -99,11 +115,12 @@ public final class RewriteWorkflowPrompts {
             你是终稿编辑。根据原文文学基因、入选候选稿、研究证据、评审意见和修改清单，完成最终重写。
             outputStyleInstruction 是最终成稿的硬约束，必须修复候选稿中所有体裁偏移。
             修复问题但不要无故把文章改成分析报告。保持文学性、完整性和内部一致性。
-            只返回最终短文正文，不返回标题之外的说明。
+            遵循节点要求的输出结构；未指定结构时，只返回最终短文正文，不返回标题之外的说明。
             """;
 
     public static final String QUALITY_REVIEW = """
             你是质量审核员。对终稿进行最终检查。
+            戏剧/剧本的分镜图由程序在审核和重写全部结束后生成，本节点只审核文字分镜，不因尚未出图扣分。
             严格根据 outputStyleInstruction 检查体裁，不能因为作品有创意而放宽体裁要求。
             返回 disruptionScore、literaryScore、coherenceScore、factualScore、sourceConnectionScore、
             genreComplianceScore、overallScore、

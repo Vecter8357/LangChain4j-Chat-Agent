@@ -93,8 +93,12 @@ public class MemoryService {
 
     /** 校验可选项目 ID 后查询对应范围的会话。 */
     public List<Conversation> conversations(String projectId) {
+        return conversations(projectId, null);
+    }
+
+    public List<Conversation> conversations(String projectId, String taskId) {
         repository.requireProject(projectId);
-        return repository.conversations(projectId);
+        return taskId == null ? repository.conversations(projectId) : repository.conversations(projectId, taskId);
     }
 
     /** 创建会话，可绑定所选项目及其任务。 */

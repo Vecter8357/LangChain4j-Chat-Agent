@@ -48,3 +48,10 @@ CREATE TABLE IF NOT EXISTS la4j_mem_task_result_origin (
  FOREIGN KEY (task_id) REFERENCES la4j_mem_task(id) ON DELETE CASCADE,
  FOREIGN KEY (conversation_id) REFERENCES la4j_mem_conversation(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS la4j_mem_rewrite_workflow (
+ id VARCHAR(36) PRIMARY KEY, conversation_id VARCHAR(36) NOT NULL,
+ preview VARCHAR(80) NOT NULL, snapshot LONGTEXT NOT NULL,
+ created_at TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+ INDEX ix_mem_rewrite_conversation(conversation_id,created_at,id),
+ FOREIGN KEY (conversation_id) REFERENCES la4j_mem_conversation(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

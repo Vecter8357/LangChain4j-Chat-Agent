@@ -22,12 +22,12 @@ Qdrant 与 Knowledge 共用 Collection，但使用 `scope=memory`、`owner=local
 重启后打开 `/chat`，侧边栏 Memory 面板支持：
 
 1. 选择/新建项目，选择/新建任务，也可使用独立会话。
-2. 发送消息时自动创建会话；普通智能问答的一问一答成功后自动保存，刷新后可选择原会话恢复。
+2. 发送消息时按所选项目和任务自动创建会话。选择项目和任务后，可从会话列表打开对应历史。
 3. 展开记忆管理，选择长期、项目或任务范围，明确输入要记录的偏好、事实或约束并点击“记录”。
 4. 修改和删除记忆；查看向量同步状态，模型或 Collection 变化时点击“重建索引”。
 5. 更新任务状态与进展；成功回答只更新独立的“最近结果”，不会覆盖人工维护的进展。
 
-颠覆性改编仍使用原独立工作流，不会自动将改编事件保存为普通聊天消息。取消浏览器请求表示停止接收；已开始的模型执行可能仍完成并保存结果，刷新会话可查看。聊天失败不保存本轮问答。
+聊天页的颠覆性改编将工作流检查点保存到 MySQL 的当前会话。重新打开会话可查看原文和终稿，也可继续提交等待中的方向选择。取消浏览器请求表示停止接收；已开始的模型执行可能仍完成并保存结果，重新打开会话可查看。聊天失败不保存本轮问答。
 
 ## 数据流与一致性
 
@@ -65,9 +65,11 @@ flowchart TD
 | GET/POST | `/api/memory/projects` | 列出/创建项目 |
 | GET/POST | `/api/memory/tasks` | 按 projectId 列任务/创建任务 |
 | PATCH | `/api/memory/tasks/{id}` | `{status,progress}` 更新任务 |
-| GET/POST | `/api/memory/conversations` | 按 projectId 列会话/创建 `{projectId,taskId,title}` |
+| GET/POST | `/api/memory/conversations` | 按 projectId 和可选的 taskId 列会话/创建 `{projectId,taskId,title}` |
 | GET | `/api/memory/conversations/{id}/messages?before=消息ID&limit=50` | 按时间正序返回一页历史；before 为排他上界 |
-| DELETE | `/api/memory/conversations/{id}` | 删除会话和消息，保留显式记忆 |
+| GET/POST | `/api/memory/conversations/{id}/rewrite-workflows` | 列出改编记录或提交改编 |
+| GET/POST | `/api/memory/conversations/{id}/rewrite-workflows/{workflowId}` 及其 `/directions` | 读取改编状态或提交方向选择 |
+| DELETE | `/api/memory/conversations/{id}` | 删除会话、消息和改编记录，保留显式记忆 |
 | GET | `/api/memory/entries?scope=PROJECT&scopeId=项目ID` | 查询范围内的有效记忆 |
 | POST | `/api/memory/entries` | `{scope,scopeId,content,source}` 明确记录 |
 | PUT | `/api/memory/entries/{id}` | `{revision,content}` 修订 |
@@ -84,7 +86,7 @@ flowchart TD
 
 DAG 的 AGENT 节点勾选 `memory.recall` 后，可在节点输入映射中明确提供 `memoryProjectId` 和 `memoryTaskId`。Runtime 会覆盖模型自行生成的项目/任务参数，未提供范围时只检索 local 长期记忆。任务必须属于所给项目。模型不能直接写入长期记忆。
 
-本版任务状态承接聊天；DAG Run/改编工作流的 Redis 快照没有自动迁入 MySQL 任务记录，也未实现任意节点断点续跑。
+聊天页此前未关联会话的改编记录仍可在 Redis 有效期内按工作流 ID 查询。DAG Run 和独立改编接口使用各自的 Redis 状态。
 
 ## 配置与验证
 

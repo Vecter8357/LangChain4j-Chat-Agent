@@ -1,5 +1,6 @@
 package com.melon.workflow.model;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import lombok.Data;
 
 import java.time.Instant;
@@ -10,6 +11,7 @@ import java.util.List;
 public class RewriteWorkflowState {
 
     private String workflowId;
+    private String conversationId;
     private String title;
     private String sourceText;
     private String targetAudience;
@@ -36,6 +38,7 @@ public class RewriteWorkflowState {
     private List<CandidateDraft> candidates = new ArrayList<>();
     private List<DraftReview> reviews = new ArrayList<>();
     private String finalDraft;
+    private List<StoryboardShot> storyboardShots = new ArrayList<>();
     private QualityReport qualityReport;
     private List<WorkflowEvent> events = new ArrayList<>();
 
@@ -46,6 +49,24 @@ public class RewriteWorkflowState {
         COMPLETED,
         NEEDS_REVIEW,
         FAILED
+    }
+
+    @Data
+    public static class StoryboardDraft {
+        private String preamble;
+        private List<StoryboardShot> shots = new ArrayList<>();
+    }
+
+    @Data
+    @JsonIgnoreProperties("imageSvg") // 兼容读取曾保存的 SVG 分镜数据，后续不再输出此字段。
+    public static class StoryboardShot {
+        private int number;
+        private String title;
+        private String script;
+        private String imagePrompt;
+        private String imageUrl;
+        private String imageStatus = "PENDING";
+        private String imageError;
     }
 
     @Data

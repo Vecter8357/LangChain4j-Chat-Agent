@@ -36,8 +36,9 @@ public class MemoryController {
     @PostMapping("/tasks") public Task task(@RequestBody TaskInput input){return service.createTask(input.projectId(),input.title());}
     /** 更新任务状态和用户维护的进度。 */
     @PatchMapping("/tasks/{id}") public Task progress(@PathVariable String id,@RequestBody ProgressInput input){return service.updateTask(id,input.status(),input.progress());}
-    /** 按可选项目 ID 查询已保存的会话。 */
-    @GetMapping("/conversations") public List<Conversation> conversations(@RequestParam(required=false) String projectId){return service.conversations(projectId);}
+    /** 按项目查询已保存的会话，可进一步筛选指定任务。 */
+    @GetMapping("/conversations") public List<Conversation> conversations(@RequestParam(required=false) String projectId,
+            @RequestParam(required=false) String taskId){return service.conversations(projectId,taskId);}
     /** 创建会话，可关联项目和任务。 */
     @PostMapping("/conversations") public Conversation conversation(@RequestBody ConversationInput input){return service.createConversation(input.projectId(),input.taskId(),input.title());}
     /** 按排他的消息 ID 游标分页读取历史消息。 */
